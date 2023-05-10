@@ -4,8 +4,9 @@ import os
 import csv
 from interface import Main_Frame, Camera_Options_Frame
 # from pygrabber.dshow_graph import FilterGraph
-from camera import Camera
-from camera_hard_core import *
+# from camera import Camera
+# from camera_hard_core import *
+from camera_primitive import *
 from events import EVT_ON_CROP, EVT_ENOUGH_POINTS, EVT_NOT_ENOUGH_POINTS, EVT_UPDT_CAM, EVT_CALIBRATION, EVT_LENS_CALIBRATION, EVT_MAX_FRAME_INTEN, EVT_PASS_FPS, EVT_BEAM_CENTERS, OnLensCalibrationStop, UpdateCamera, OnCalibration, OnLensCalibrationInit
 import numpy as np
 # import wx.grid as grd
@@ -47,7 +48,7 @@ class Frame_Handlers ( Main_Frame ):
 		# if cameraCnt is not None:
 		# 	self.camera = cameraList[0]
 
-		self.camera = None
+		self.camera = Camera(print)
 		self.stream_source = None
 		self.rec_save_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -95,7 +96,7 @@ class Frame_Handlers ( Main_Frame ):
 		self.panel_cam_img.meas_on = False
 		self.panel_cam_img.run_meas = False
 		print("Pre Start")
-		self.panel_cam_img.start()
+		# self.panel_cam_img.start()
 
 	def on_centers_update(self, event):
 		# print(event.centers)
@@ -148,43 +149,48 @@ class Frame_Handlers ( Main_Frame ):
 		self.panel_cam_img.make_screenshot(self.rec_save_path)
 
 	def on_acq_start(self, event):
-		if self.stream_source is None:
-			try:
-				if self.camera is not None:
-					connect_camera(self.camera)
-					self.stream_source = create_stream_source(self.camera)
-				else:
-					return
-			except:
-				print("Can not open the camera!")
+			if self.camera is not None:
+				self.panel_cam_img.camera = self.camera
+				self.panel_cam_img.start()
+		# if self.stream_source is None:
+		# 	try:
+		# 		if self.camera is not None:
+		# 			connect_camera(self.camera)
+		# 			self.stream_source = create_stream_source(self.camera)
+		# 		else:
+		# 			return
+		# 	except:
+		# 		print("Can not open the camera!")
 
-			try:
-				start_grabbing(self.stream_source)
-				self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
-				self.panel_cam_img.start()	
-				# self.t_stop.Enable(True)
-				# self.t_start.Enable(False)
-			except:
-				print("Can not start grabbing images!")
+		# 	try:
+		# 		start_grabbing(self.stream_source)
+		# 		self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
+		# 		self.panel_cam_img.start()	
+		# 		# self.t_stop.Enable(True)
+		# 		# self.t_start.Enable(False)
+		# 	except:
+		# 		print("Can not start grabbing images!")
 
-			exp_time = getExposureTime(self.camera)
-			# exp_time = 1000
-			self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
-			self.exp_text.SetValue(str(exp_time))
-			self.exp_slider.SetValue(exp_time)
+			# exp_time = getExposureTime(self.camera)
+			# # exp_time = 1000
+			# self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
+			# self.exp_text.SetValue(str(exp_time))
+			# self.exp_slider.SetValue(exp_time)
 
-			gain = getGain(self.camera)
-			# gain = 1
-			self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
-			self.gain_text.SetValue(str(gain))
-			self.gain_slider.SetValue(gain)
+			# gain = getGain(self.camera)
+			# # gain = 1
+			# self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
+			# self.gain_text.SetValue(str(gain))
+			# self.gain_slider.SetValue(gain)
 	
 	def on_acq_stop(self, event):
-		if self.stream_source is not None:
+		if self.camera is not None: ## Here should be checking that acqusution was started at first 
 			self.panel_cam_img.stop()
-			stop_grabbing(self.stream_source)
-			close_stream_source(self.stream_source, self.camera)
-			self.stream_source = None
+		# if self.stream_source is not None:
+		# 	self.panel_cam_img.stop()
+		# 	stop_grabbing(self.stream_source)
+		# 	close_stream_source(self.stream_source, self.camera)
+		# 	self.stream_source = None
 
 			# self.t_stop.Enable(False)
 			# self.t_start.Enable(True)

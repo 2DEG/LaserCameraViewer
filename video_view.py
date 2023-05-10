@@ -46,15 +46,16 @@ class IntervalTimer(StoppableThread):
 
 class VideoView(ImageView):
 
-	def __init__(self, *args, callback=None, **kw):
+	def __init__(self, *args, camera= None, callback=None, **kw):
 		ImageView.__init__(self, *args, **kw)
 
-		self.camera = Camera(print)
-		self.callback = self.camera.grab_frame
+		# self.camera = Camera(print)
+		self.camera = camera
+		# self.callback = self.camera.grab_frame
 		# self.callback = callback
 		self.meas_on = False
 		self.run_meas = False
-		self.interval = IntervalTimer(1/100, self.player)
+		
 		self.draw_circ = False
 		self.click = False
 		self.radius = 30
@@ -177,86 +178,91 @@ class VideoView(ImageView):
 	
 	def player(self):
 		
-		frame = self.callback()
-		# print(frame)
-		if frame != []:
-			# print("Inside Player")
-			frame = frame[-1].convert_pixel_format(opencv_display_format).as_opencv_image()
-			frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+		if self.camera is not None:
+			frame = self.camera.grab_frame()
+			# frame = self.callback()
+			# print(frame)
+			if frame != []:
+				# print("Inside Player")
+				frame = frame[-1].convert_pixel_format(opencv_display_format).as_opencv_image()
+				frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
 
-			max_inten = frame.max()
+				max_inten = frame.max()
 
-			if self.make_screen_shot:
-				print("Player is ready for screenshot")
-				if os.path.exists(self.rec_path): 
-					print('Screenshot path is valid!')
-					dt = datetime.now().strftime("%d%m%Y_%Hh%Mm%Ss") 
-					im = Image.fromarray(frame)
-					im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
-				self.make_screen_shot = False
+				if self.make_screen_shot:
+					print("Player is ready for screenshot")
+					if os.path.exists(self.rec_path): 
+						print('Screenshot path is valid!')
+						dt = datetime.now().strftime("%d%m%Y_%Hh%Mm%Ss") 
+						im = Image.fromarray(frame)
+						im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
+					self.make_screen_shot = False
 
-			# frame, ellipse_centers = detect_ellipses(frame, self.cross_line_len)
-			frame, ellipse_centers = frame, None
+				# frame, ellipse_centers = detect_ellipses(frame, self.cross_line_len)
+				frame, ellipse_centers = frame, None
 
-			if ellipse_centers is not None:
-				wx.PostEvent(self, OnBeamCenters(ellipse_centers))
+				if ellipse_centers is not None:
+					wx.PostEvent(self, OnBeamCenters(ellipse_centers))
 
-			if self.init_tracking:
-				self.tracking_arr.append(ellipse_centers)
-				if os.path.exists(self.track_path): 
-					print('Tracking path is valid!')
-					dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
-					self.tracking_file = os.path.join(self.track_path, "{}.csv".format(dt))
+				if self.init_tracking:
+					self.tracking_arr.append(ellipse_centers)
+					if os.path.exists(self.track_path): 
+						print('Tracking path is valid!')
+						dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
+						self.tracking_file = os.path.join(self.track_path, "{}.csv".format(dt))
+						with open(self.tracking_file, 'a') as my_csv:
+							csvWriter = csv.writer(my_csv,delimiter=',')
+							csvWriter.writerows(ellipse_centers)
+					self.init_tracking = False
+
+				if self.collect_centers:
+					self.tracking_arr.append(ellipse_centers)
 					with open(self.tracking_file, 'a') as my_csv:
-						csvWriter = csv.writer(my_csv,delimiter=',')
-						csvWriter.writerows(ellipse_centers)
-				self.init_tracking = False
+							csvWriter = csv.writer(my_csv,delimiter=',')
+							csvWriter.writerows(ellipse_centers)
+					self.collect_centers = False
+					# self.init_tracking = False
 
-			if self.collect_centers:
-				self.tracking_arr.append(ellipse_centers)
-				with open(self.tracking_file, 'a') as my_csv:
-						csvWriter = csv.writer(my_csv,delimiter=',')
-						csvWriter.writerows(ellipse_centers)
-				self.collect_centers = False
-				# self.init_tracking = False
-
-			wx.PostEvent(self, UpdateIntensity(max_inten))
+				wx.PostEvent(self, UpdateIntensity(max_inten))
 
 
-			# if self.draw_circ:
-			# 	# cv2.circle(frame, (self.circ_x, self.circ_y), self.raduis, (255, 0, 0), thickness=2)
-			# 	frame_cropped, frame = crop_circle_area(frame, (self.circ_x, self.circ_y), self.radius)
-			# 	if self.click:
-			# 		event = CropEvent(frame_cropped)
-			# 		wx.PostEvent(self, event)
-			# 		self.click = False
+				# if self.draw_circ:
+				# 	# cv2.circle(frame, (self.circ_x, self.circ_y), self.raduis, (255, 0, 0), thickness=2)
+				# 	frame_cropped, frame = crop_circle_area(frame, (self.circ_x, self.circ_y), self.radius)
+				# 	if self.click:
+				# 		event = CropEvent(frame_cropped)
+				# 		wx.PostEvent(self, event)
+				# 		self.click = False
 
-			# if self.start_line:
-			# 	if self.startPos is not None and self.recentPos is not None:
-			# 		frame = cv2.line(frame, self.startPos, self.recentPos, (0, 255, 0), thickness=2)
+				# if self.start_line:
+				# 	if self.startPos is not None and self.recentPos is not None:
+				# 		frame = cv2.line(frame, self.startPos, self.recentPos, (0, 255, 0), thickness=2)
 
-			if self.zoom_pipeline != []:
-				# if self.rect_start is not None and self.rect_end is not None:
-				for each in self.zoom_pipeline:
-					# print(each)
-					frame = frame[min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]), min(each[0][0], each[1][0]) : max(each[0][0], each[1][0])]
-					# print(frame.shape)
+				if self.zoom_pipeline != []:
+					# if self.rect_start is not None and self.rect_end is not None:
+					for each in self.zoom_pipeline:
+						# print(each)
+						frame = frame[min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]), min(each[0][0], each[1][0]) : max(each[0][0], each[1][0])]
+						# print(frame.shape)
 
-			if self.draw_rect:
-				# print("HI!")
-				if self.rect_start is not None and self.rect_end is not None:
-					frame = cv2.rectangle(frame, self.rect_start, self.rect_end, (255, 0, 0), thickness=2)
+				if self.draw_rect:
+					# print("HI!")
+					if self.rect_start is not None and self.rect_end is not None:
+						frame = cv2.rectangle(frame, self.rect_start, self.rect_end, (255, 0, 0), thickness=2)
 
-			wx.CallAfter(self.set_frame, frame)
+				wx.CallAfter(self.set_frame, frame)
 
 	def start(self):
-		self.camera.start()
-		self.interval.start()
+		self.interval = IntervalTimer(1/100, self.player)
+		self.camera = Camera(print)
+		if self.camera is not None:
+			self.camera.start()
+			self.interval.start()
 
 	def stop(self):
 		self.interval.stop()
 		self.camera.stop()
-		self.camera.join()
+		# self.camera.join()
 		self.hide = True
 		self.set_default_image()
 

@@ -83,6 +83,7 @@ class Camera(threading.Thread):
 		threading.Thread.__init__(self)
 		self.cam_queue = queue.Queue()
 		self.working_function = callback
+		self.stop_cam_evt = threading.Event()
 		
 	
 	class Producer(threading.Thread):
@@ -105,7 +106,9 @@ class Camera(threading.Thread):
 			cam.queue_frame(frame)
 
 		def stop(self):
-			self.killswitch.set()
+			if self.isAlive():
+				self.killswitch.set()
+				self.join()
 
 		def run(self):
 			try:
@@ -130,7 +133,10 @@ class Camera(threading.Thread):
 
 	def stop(self):
 		self.producer.stop()
-		self.producer.join()
+		if self.isAlive():
+			self.stop_cam_evt.set()
+			self.join()
+		# self.producer.join()
 
 	def run(self):
 		
