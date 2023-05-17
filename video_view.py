@@ -51,6 +51,7 @@ class VideoView(ImageView):
 
 		# self.camera = Camera(print)
 		self.camera = camera
+		self.interval = None
 		# self.callback = self.camera.grab_frame
 		# self.callback = callback
 		self.meas_on = False
@@ -260,8 +261,10 @@ class VideoView(ImageView):
 			self.interval.start()
 
 	def stop(self):
-		self.interval.stop()
-		self.camera.stop()
+		if self.interval is not None:
+			self.interval.stop()
+		if self.camera is not None:
+			self.camera.stop()
 		# self.camera.join()
 		self.hide = True
 		self.set_default_image()

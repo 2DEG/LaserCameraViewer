@@ -13,8 +13,8 @@ from vmbpy import *
 # All frames will either be recorded in this format, or transformed to it before being displayed
 opencv_display_format = PixelFormat.Mono8
 
-FRAME_HEIGHT = 480
-FRAME_WIDTH = 480
+FRAME_HEIGHT = 1080
+FRAME_WIDTH = 1080
 
 def resize_if_required(frame: Frame) -> numpy.ndarray:
 	# Helper function resizing the given frame, if it has not the required dimensions.
@@ -39,6 +39,26 @@ def create_dummy_frame() -> numpy.ndarray:
 	return cv_frame
 
 
+def print_all_features(module: FeatureContainer):
+    for feat in module.get_all_features():
+	    print_feature(feat)
+        # if feat.get_visibility() <= max_visibility_level:
+            
+
+def print_feature(feature: FeatureTypes):
+    try:
+        value = feature.get()
+
+    except (AttributeError, VmbFeatureError):
+        value = None
+
+    print('/// Feature name   : {}'.format(feature.get_name()))
+    print('/// Display name   : {}'.format(feature.get_display_name()))
+    print('/// Tooltip        : {}'.format(feature.get_tooltip()))
+    print('/// Description    : {}'.format(feature.get_description()))
+    print('/// SFNC Namespace : {}'.format(feature.get_sfnc_namespace()))
+    print('/// Value          : {}\n'.format(str(value)))
+
 
 def set_nearest_value(cam: Camera, feat_name: str, feat_value: int):
 	# Helper function that tries to set a given value. If setting of the initial value failed
@@ -48,10 +68,13 @@ def set_nearest_value(cam: Camera, feat_name: str, feat_value: int):
 	feat = cam.get_feature_by_name(feat_name)
 
 	try:
+		# min_, max_ = feat.get_range()
 		feat.set(feat_value)
 
 	except VmbFeatureError:
+		print("Except in dimension setting")
 		min_, max_ = feat.get_range()
+		print("Dim range: ", min_, max_)
 		inc = feat.get_increment()
 
 		if feat_value <= min_:
@@ -115,6 +138,11 @@ class Camera(threading.Thread):
 				with VmbSystem.get_instance() as vmb:
 					for cam in vmb.get_all_cameras():
 						with cam:
+							# print_all_features(cam)
+							print("Gain range: ", cam.Gain.get_range())
+							print("Gain increment: ", cam.Gain.get_increment())
+							print("Exposure range: ", cam.ExposureTime.get_range())
+							print("Exposure increment: ", cam.ExposureTime.get_increment())
 							set_nearest_value(cam, 'Height', FRAME_HEIGHT)
 							set_nearest_value(cam, 'Width', FRAME_WIDTH)
 							try:
@@ -128,6 +156,7 @@ class Camera(threading.Thread):
 
 							finally:
 								cam.stop_streaming()
+								print("Streaming ended")
 			except VmbCameraError:
 				pass
 

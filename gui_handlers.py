@@ -263,8 +263,8 @@ class Frame_Handlers ( Main_Frame ):
 		if self.stream_source is not None:
 			self.panel_cam_img.stop()
 			# self.camera.disconnect()
-			stop_grabbing(self.stream_source)
-			close_stream_source(self.stream_source, self.camera)
+			# stop_grabbing(self.stream_source)
+			# close_stream_source(self.stream_source, self.camera)
 		cv2.destroyAllWindows()
 		
 		self.Destroy()
