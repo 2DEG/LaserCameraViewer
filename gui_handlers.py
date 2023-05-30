@@ -48,7 +48,9 @@ class Frame_Handlers ( Main_Frame ):
 		# if cameraCnt is not None:
 		# 	self.camera = cameraList[0]
 
-		self.camera = Camera(print)
+		self.camera = Camera('Camera_AV')
+		# self.camera = None ## TODO Check if the camera is set, when starting the acquis.
+		# self.backend = None
 		self.stream_source = None
 		self.rec_save_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -224,32 +226,19 @@ class Frame_Handlers ( Main_Frame ):
 		self.panel_cam_img.collect_centers = True
 	
 	def on_exp_enter(self, event):
-		self.panel_cam_img.stop()
-		stop_grabbing(self.stream_source)
-		# close_stream_source(self.stream_source, self.camera)
 		new_exp_time = float(self.exp_text.GetValue())
 		print("New exp_time:", new_exp_time)
-		setExposureTime(self.camera, new_exp_time)
-		# start_grabbing(self.stream_source)
-		exp_time = getExposureTime(self.camera)
+		exp_time = self.camera.set_exposure(new_exp_time)
 		self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
 		self.exp_slider.SetValue(exp_time)
-		start_grabbing(self.stream_source)
-		self.panel_cam_img.start()
 
 	def on_gain_enter(self, event):
-		self.panel_cam_img.stop()
-		stop_grabbing(self.stream_source)
-		# close_stream_source(self.stream_source, self.camera)
 		new_gain = float(self.gain_text.GetValue())
 		print("New gain:", new_gain)
-		setGain(self.camera, new_gain)
-		# start_grabbing(self.stream_source)
-		gain = getGain(self.camera)
+		gain = self.camera.set_gain(new_gain)
+		print(type(gain))
 		self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
 		self.gain_slider.SetValue(gain)
-		start_grabbing(self.stream_source)
-		self.panel_cam_img.start()
 
 	def on_update_fps(self, event):
 		self.statusbar.SetStatusText("Real fps: {:d}".format(event.fps), 1)
@@ -271,18 +260,19 @@ class Frame_Handlers ( Main_Frame ):
 		wx.Exit()
 
 
-	def __del__( self ):
-		if self.stream_source is not None:
-			self.panel_cam_img.stop()
-			# self.camera.disconnect()
-			stop_grabbing(self.stream_source)
-			close_stream_source(self.stream_source, self.camera)
-		cv2.destroyAllWindows()
-		pass
+	# def __del__( self ):
+	# 	if self.stream_source is not None:
+	# 		self.panel_cam_img.stop()
+	# 		# self.camera.disconnect()
+	# 		stop_grabbing(self.stream_source)
+	# 		close_stream_source(self.stream_source, self.camera)
+	# 	cv2.destroyAllWindows()
+	# 	pass
 
 	def opt_cam_start( self, event ):
-		options = Camera_Options_Handler(parent=None)
+		options = Camera_Options_Handler(parent=self)
 		options.Show()
+		print("Non blocking")
 
 class Camera_Options_Handler(Camera_Options_Frame):
 	def __init__( self, *args, parent=None, **kw):
@@ -291,11 +281,12 @@ class Camera_Options_Handler(Camera_Options_Frame):
 		# self.devices = FilterGraph().get_input_devices()
 		# self.cameras_list.Set(self.devices)
 		# self.cameras_list.SetSelection(0)
-		print(self.devices)
+		# print(self.devices)
 
 	def on_apply(self, event):
-		print(self.cameras_list.GetString(self.cameras_list.GetSelection()))
-		print(self.backends_list.GetString(self.backends_list.GetSelection()))
+		# camera_id = self.cameras_list.GetString(self.cameras_list.GetSelection())
+		backend = self.backends_list.GetString(self.backends_list.GetSelection())
+		self.camera = Camera(backend=backend) # Setup camera object
 
 	def on_close(self, event):
 		self.Destroy()

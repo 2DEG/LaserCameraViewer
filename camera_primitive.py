@@ -1,10 +1,13 @@
+from collections.abc import Callable, Iterable, Mapping
 import sys
 import threading
 import copy
 import queue
 from time import sleep
 import numpy
-from typing import Optional
+from typing import Any, Optional
+from abc import ABC, abstractmethod
+ 
 
 import cv2
 
@@ -100,15 +103,64 @@ def try_put_frame(q: queue.Queue, cam: Camera, frame: Optional[Frame]):
 	except queue.Full:
 		pass
 
-class Camera(threading.Thread):
 
-	def __init__(self, callback = None) -> None:
+def inheritors(klass):
+	return {child.__name__: child for child in klass.__subclasses__()}
+
+
+## Abstract camera class
+class Camera(ABC):
+	def __init__(self, *args, **kwargs):
+		super().__init__()
+	
+	def __new__(cls, backend):
+		subclasses = inheritors(cls)
+		if not backend in subclasses.keys():
+			raise ValueError("Invalid backend '{}'".format(backend))
+		subclass = subclasses[backend]
+		instance = super(Camera, subclass).__new__(subclass)
+		return instance
+
+	@abstractmethod
+	def run(self):
+		pass
+
+	@abstractmethod
+	def stop(self):
+		pass
+
+	@abstractmethod
+	def grab_frame(self):
+		pass
+
+	@abstractmethod
+	def get_cam_id(self):
+		pass
+
+	@abstractmethod
+	def set_exposure(self, exposure):
+		pass
+
+	@abstractmethod
+	def set_gain(self, gain):	
+		pass
+
+	@abstractmethod
+	def get_exposure(self):
+		pass
+
+	@abstractmethod
+	def get_gain(self):
+		pass
+
+class Camera_AV(Camera, threading.Thread):
+	"""Class for Allied Vision cameras"""
+	def __init__( self, *args, **kw):
 		threading.Thread.__init__(self)
 		self.cam_queue = queue.Queue()
-		self.working_function = callback
 		self.stop_cam_evt = threading.Event()
+		self.producer = None
 		
-	
 	class Producer(threading.Thread):
 		def __init__(self, frame_queue: queue.Queue):
 			threading.Thread.__init__(self)
@@ -137,6 +189,7 @@ class Camera(threading.Thread):
 			try:
 				with VmbSystem.get_instance() as vmb:
 					for cam in vmb.get_all_cameras():
+						print(cam.get_id() == "DEV_1AB22C01054E")
 						with cam:
 							# print_all_features(cam)
 							print("Gain range: ", cam.Gain.get_range())
@@ -156,7 +209,9 @@ class Camera(threading.Thread):
 
 							finally:
 								cam.stop_streaming()
-								print("Streaming ended")
+								print("Streaming stopped")
+								
+							print("Streaming ended")
 			except VmbCameraError:
 				pass
 
@@ -165,7 +220,6 @@ class Camera(threading.Thread):
 		if self.isAlive():
 			self.stop_cam_evt.set()
 			self.join()
-		# self.producer.join()
 
 	def run(self):
 		
@@ -173,73 +227,120 @@ class Camera(threading.Thread):
 		print("Here")
 		self.producer.start()
 		print("After producer")
-		# self.event = None
-		# k = 0
-		# alive = True
 
+	def get_cam_id(self):
+		pass
+
+	def set_exposure(self, exposure):
+		return self.set_param("exposure", exposure)
+
+	def set_gain(self, gain):	
+		return self.set_param("gain", gain)
+	
+	def set_param(self, param = '', val = 0):
+		alive = True
+		real = 0
+		if self.producer is not None and self.producer.isAlive():
+			self.producer.stop()
+			alive = False
+
+		try:
+			with VmbSystem.get_instance() as vmb:
+				for cam in vmb.get_all_cameras():
+					print(cam.get_id() == "DEV_1AB22C01054E")
+					with cam:
+						if param == "exposure":
+							try:
+								print("Exposure before setting: ", cam.ExposureTime.get())
+								cam.ExposureTime.set(val)
+							except (AttributeError, VmbFeatureError):
+								pass
+
+							try:
+								real = cam.ExposureTime.get()
+								print("Exposure after setting: ", real)
+							except (AttributeError, VmbFeatureError):
+								pass
+						
+						elif param == "gain":
+							try:
+								print("Gain before setting: ", cam.Gain.get())
+								cam.Gain.set(val)
+							except (AttributeError, VmbFeatureError):
+								pass
+
+							try:
+								real = cam.Gain.get()
+								print("Gain after setting: ", real)
+							except (AttributeError, VmbFeatureError):
+								pass
+		except VmbCameraError:
+			pass
+		
+		if not alive:
+			self.producer.run()
+
+		return real
+							
+
+	def get_exposure(self):	
+		return self.get_param("exposure")
+
+	def	get_gain(self):	
+		return self.get_param("gain")
+	
+	def get_param(self, param = ''):
+		alive = True
+		if self.producer is not None and self.producer.isAlive():
+			self.producer.stop()
+			alive = False
+
+		try:
+			with VmbSystem.get_instance() as vmb:
+				for cam in vmb.get_all_cameras():
+					print(cam.get_id() == "DEV_1AB22C01054E")
+					with cam:						
+						try:
+							if param == "exposure":
+								res = cam.ExposureTime.get()
+							elif param == "gain":
+								res = cam.Gain.get()
+						except (AttributeError, VmbFeatureError):
+							pass
+		except VmbCameraError:
+			pass
+		
+		if not alive:
+			self.producer.run()	
+
+		return res
+	
 	def grab_frame(self, n = 1):
 		frames = []
-		# k = 0
 
-		if self.working_function is not None:
-			# print("Inside loop")
-			with self.cam_queue.mutex:
-				self.cam_queue.queue.clear()
-			while len(frames) != n:
-				# print("Me")
-				frames_left = self.cam_queue.qsize()
-				# print(frames_left)
+		with self.cam_queue.mutex:
+			self.cam_queue.queue.clear()
+		while len(frames) != n:
+			# print("Me")
+			frames_left = self.cam_queue.qsize()
+			# print(frames_left)
 				
-				while frames_left:
-					try:
-						cam_id, frame = self.cam_queue.get_nowait()
+			while frames_left:
+				try:
+					_, frame = self.cam_queue.get_nowait()
 
-					except queue.Empty:
-						break
+				except queue.Empty:
+					break
 
-				# Add/Remove frame from current state.
-					if frame:
-						# frame = frame.convert_pixel_format(opencv_display_format).as_opencv_image()
-						# print(frame)
-						# frame = cv2.COLOR_GRAY2RGB(frame)
-						frames.append(frame)
+			# Add/Remove frame from current state.
+				if frame:
+					# frame = frame.convert_pixel_format(opencv_display_format).as_opencv_image()
+					# print(frame)
+					# frame = cv2.COLOR_GRAY2RGB(frame)
+					frames.append(frame)
 
-					else:
-						frames.pop()
+				else:
+					frames.pop()
 
-					frames_left -= 1
-				# k += 1
-				# sleep(1/1000)
-				# if k == 10:
-				# 	break
-				# self.alive_cam.set()
-				
-		# self.event.clear()
-		# self.alive_cam.clear()
-		# print("Frames: ", frames)
+				frames_left -= 1
 		return frames
-
-				# if frames:
-				# 	cv_images = [frames[cam_id] for cam_id in sorted(frames.keys())]
-				# 	self.working_function(cv_images)
-				# k += 1
-				# if k == 100:
-				# 	self.alive_cam.set()
-				
-
-
-
-def main():
-	camera = Camera(print)
-	camera.start()
-	sleep(1)
-	print("First grab", camera.grab_frame())
-	sleep(1)
-	print("Second grab", camera.grab_frame())
-	sleep(1)
-	camera.stop()
-	camera.join()
-
-
-# if __name__ == '__main__':
-# 	main()

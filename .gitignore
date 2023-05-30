@@ -161,3 +161,6 @@ cython_debug/
 __pycache__/video_view.cpython-38.pyc
 __pycache__/gui_handlers.cpython-38.pyc
 __pycache__/camera_primitive.cpython-38.pyc
+__pycache__/camera_primitive.cpython-38.pyc
+__pycache__/gui_handlers.cpython-38.pyc
+__pycache__/video_view.cpython-38.pyc

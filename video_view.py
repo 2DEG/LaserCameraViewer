@@ -255,7 +255,7 @@ class VideoView(ImageView):
 
 	def start(self):
 		self.interval = IntervalTimer(1/100, self.player)
-		self.camera = Camera(print)
+		self.camera = Camera('Camera_AV')
 		if self.camera is not None:
 			self.camera.start()
 			self.interval.start()
