@@ -265,7 +265,7 @@ class VideoView(ImageView):
 			self.interval.stop()
 		if self.camera is not None:
 			self.camera.stop()
-		# self.camera.join()
+			# self.camera.join()
 		self.hide = True
 		self.set_default_image()
 

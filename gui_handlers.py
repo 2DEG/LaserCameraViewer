@@ -3,306 +3,340 @@ import cv2
 import os
 import csv
 from interface import Main_Frame, Camera_Options_Frame
+
 # from pygrabber.dshow_graph import FilterGraph
 # from camera import Camera
 # from camera_hard_core import *
 from camera_primitive import *
-from events import EVT_ON_CROP, EVT_ENOUGH_POINTS, EVT_NOT_ENOUGH_POINTS, EVT_UPDT_CAM, EVT_CALIBRATION, EVT_LENS_CALIBRATION, EVT_MAX_FRAME_INTEN, EVT_PASS_FPS, EVT_BEAM_CENTERS, OnLensCalibrationStop, UpdateCamera, OnCalibration, OnLensCalibrationInit
+from events import (
+    EVT_ON_CROP,
+    EVT_ENOUGH_POINTS,
+    EVT_NOT_ENOUGH_POINTS,
+    EVT_UPDT_CAM,
+    EVT_CALIBRATION,
+    EVT_LENS_CALIBRATION,
+    EVT_MAX_FRAME_INTEN,
+    EVT_PASS_FPS,
+    EVT_BEAM_CENTERS,
+    OnLensCalibrationStop,
+    UpdateCamera,
+    OnCalibration,
+    OnLensCalibrationInit,
+)
 import numpy as np
+
 # import wx.grid as grd
 
 # from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas  # type: ignore
-# from matplotlib.figure import Figure 
+# from matplotlib.figure import Figure
 # import matplotlib.pyplot as plt
 
-class Frame_Handlers ( Main_Frame ):
-	
-	def __init__( self, *args, **kw):
-		Main_Frame.__init__ ( self, *args, **kw)
 
-		self.Bind(wx.EVT_CLOSE, self.on_close)	
+class Frame_Handlers(Main_Frame):
+    def __init__(self, *args, **kw):
+        Main_Frame.__init__(self, *args, **kw)
 
-		# self.available_cameras = []
-		
-	# 	self.fit_func = None
-	# 	self.n_planned = 0
-	# 	self.exp_table = np.array([])
+        self.Bind(wx.EVT_CLOSE, self.on_close)
 
-		# for i in range(10):
-		# 	cap = cv2.VideoCapture(i)
-		# 	if cap.isOpened():
-		# 		self.available_cameras.append(i)
-		# 	cap.release()
-		
-		# if len(self.available_cameras) != 0:
-		# 	# print(self.available_cameras)
-		# 	self.camera = Camera(self.available_cameras[0])
-		# else:
-		# 	wx.MessageBox("Camera is not found!", "ERROR", wx.OK | wx.ICON_ERROR)
+        # self.available_cameras = []
 
-		# try:
-		# 	cameraCnt, cameraList = enumCameras()
-		# except:
-		# 	print("Can not get list of cameras!")
+        # 	self.fit_func = None
+        # 	self.n_planned = 0
+        # 	self.exp_table = np.array([])
 
-		# if cameraCnt is not None:
-		# 	self.camera = cameraList[0]
+        # for i in range(10):
+        # 	cap = cv2.VideoCapture(i)
+        # 	if cap.isOpened():
+        # 		self.available_cameras.append(i)
+        # 	cap.release()
 
-		self.camera = Camera('Camera_AV')
-		# self.camera = None ## TODO Check if the camera is set, when starting the acquis.
-		# self.backend = None
-		self.stream_source = None
-		self.rec_save_path = os.path.dirname(os.path.realpath(__file__))
+        # if len(self.available_cameras) != 0:
+        # 	# print(self.available_cameras)
+        # 	self.camera = Camera(self.available_cameras[0])
+        # else:
+        # 	wx.MessageBox("Camera is not found!", "ERROR", wx.OK | wx.ICON_ERROR)
 
-		# Timers declaration
-		self.rec_timer = wx.Timer(self)
-		self.recording_time = int(self.video_rate.GetValue())
-		# self.video_timer = wx.Timer(self)
-		self.track_timer = wx.Timer(self)
-		self.tracking_time = int(self.time_bin.GetValue()*1000)
-		self.Bind(wx.EVT_TIMER, self.on_rec_timer)
-		# self.timer.Start(1000./fps)
-		# self.Bind(wx.EVT_TIMER, self.on_timer)
+        # try:
+        # 	cameraCnt, cameraList = enumCameras()
+        # except:
+        # 	print("Can not get list of cameras!")
 
-		# self.camera = Camera(0)
+        # if cameraCnt is not None:
+        # 	self.camera = cameraList[0]
 
-		# self.camera.set_resolution(2592, 2048)
+        self.camera = Camera("Camera_AV")
+        # self.camera = None ## TODO Check if the camera is set, when starting the acquis.
+        # self.backend = None
+        self.stream_source = None
+        self.rec_save_path = os.path.dirname(os.path.realpath(__file__))
 
-		# self.t_stop.Enable(False)
+        # Timers declaration
+        self.rec_timer = wx.Timer(self)
+        self.recording_time = int(self.video_rate.GetValue())
+        # self.video_timer = wx.Timer(self)
+        self.track_timer = wx.Timer(self)
+        self.tracking_time = int(self.time_bin.GetValue() * 1000)
+        self.Bind(wx.EVT_TIMER, self.on_rec_timer)
+        # self.timer.Start(1000./fps)
+        # self.Bind(wx.EVT_TIMER, self.on_timer)
 
-		self.statusbar.SetStatusText("Cursor coord.: ({:d}, {:d})".format(0, 0), 0)
-		self.statusbar.SetStatusText("Real fps: {:d}".format(0), 1)
-		# exp_time = getExposureTime(self.camera)
-		exp_time = 1000
-		self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
-		self.exp_text.SetValue(str(exp_time))
-		self.exp_slider.SetValue(exp_time)
+        # self.camera = Camera(0)
 
-		# gain = getGain(self.camera)
-		gain = 1
-		self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
-		self.gain_text.SetValue(str(gain))
-		self.gain_slider.SetValue(gain)
-		
-		self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(0), 4)
-		self.statusbar.SetStatusText("Con. status: Connected", 5)
+        # self.camera.set_resolution(2592, 2048)
 
-		# self.panel_cam_img.Connect(-1, -1, EVT_ON_CROP, self.on_crop)t
-		self.panel_cam_img.Connect(-1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity)
-		self.panel_cam_img.Connect(-1, -1, EVT_PASS_FPS, self.on_update_fps)
-		self.panel_cam_img.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
-		# self.Connect(-1, -1, EVT_UPDT_CAM, self.on_camera_setup_update)
+        # self.t_stop.Enable(False)
 
-		# self.panel_cam_img.callback = self.capture
-		# self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
-		self.panel_cam_img.meas_on = False
-		self.panel_cam_img.run_meas = False
-		print("Pre Start")
-		# self.panel_cam_img.start()
+        self.statusbar.SetStatusText("Cursor coord.: ({:d}, {:d})".format(0, 0), 0)
+        self.statusbar.SetStatusText("Real fps: {:d}".format(0), 1)
+        # exp_time = getExposureTime(self.camera)
+        exp_time = 1000
+        self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
+        self.exp_text.SetValue(str(exp_time))
+        self.exp_slider.SetValue(exp_time)
 
-	def on_centers_update(self, event):
-		# print(event.centers)
-		centers = event.centers
-		# message = ''
-		self.info_monitor.Clear()
-		self.info_monitor.WriteText('Beams centers detected:' + "\n")
-		for idx, each in enumerate(centers):
-			self.info_monitor.AppendText('{}. x: {}, y: {} \n'.format(idx+1, each[0], each[1]))
-		
-		# self.info_monitor.SetValue(message)
+        # gain = getGain(self.camera)
+        gain = 1
+        self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
+        self.gain_text.SetValue(str(gain))
+        self.gain_slider.SetValue(gain)
 
-	def on_rec_start_stop(self, event):
-		print("Sequence Timer ID: ", self.rec_timer.Id)
-		if self.t_vid.IsToggled():
-			# Start recording
-			self.rec_timer.Start(self.recording_time)
-		else:
-			self.rec_timer.Stop()
-			# Stop recording
-		# print("Is toggled? ", self.t_vid.IsToggled())
+        self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(0), 4)
+        self.statusbar.SetStatusText("Con. status: Connected", 5)
 
-	def on_rec_timer(self, event):
-		if event.Id == self.rec_timer.Id:
-			print("Current Event ID: ", event.Id)
-			evt = wx.PyCommandEvent(wx.wxEVT_COMMAND_TOOL_CLICKED, self.t_scr_sht.GetId())
-			wx.PostEvent(self, evt)
-		if event.Id == self.track_timer.Id:
-			self.track_wr_point()
-		# .GetEventHandler().ProcessEvent()
+        # self.panel_cam_img.Connect(-1, -1, EVT_ON_CROP, self.on_crop)t
+        self.panel_cam_img.Connect(
+            -1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity
+        )
+        self.panel_cam_img.Connect(-1, -1, EVT_PASS_FPS, self.on_update_fps)
+        self.panel_cam_img.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
+        # self.Connect(-1, -1, EVT_UPDT_CAM, self.on_camera_setup_update)
 
-	def on_video_rate(self, event):
-		# print(event.GetPosition())
-		self.recording_time = int(self.video_rate.GetValue())
-		# self.tracking_time = int(event.GetPosition())
-		# return
-	
-	def on_rec_dir(self, event):
-		path = event.GetPath() 
-		if os.path.exists(path):
-			self.rec_save_path = path
+        # self.panel_cam_img.callback = self.capture
+        # self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
+        self.panel_cam_img.meas_on = False
+        self.panel_cam_img.run_meas = False
+        print("Pre Start")
+        # self.panel_cam_img.start()
 
-	def on_track_saving_dir(self, event):
-		path = event.GetPath() 
-		if os.path.exists(path):
-			self.panel_cam_img.track_path = path
+    def on_centers_update(self, event):
+        # print(event.centers)
+        centers = event.centers
+        # message = ''
+        self.info_monitor.Clear()
+        self.info_monitor.WriteText("Beams centers detected:" + "\n")
+        for idx, each in enumerate(centers):
+            self.info_monitor.AppendText(
+                "{}. x: {}, y: {} \n".format(idx + 1, each[0], each[1])
+            )
 
-	def on_screenshot(self, event):
-		print("Screenshot buttom pressed!")
-		self.panel_cam_img.make_screenshot(self.rec_save_path)
+        # self.info_monitor.SetValue(message)
 
-	def on_acq_start(self, event):
-			if self.camera is not None:
-				self.panel_cam_img.camera = self.camera
-				self.panel_cam_img.start()
-		# if self.stream_source is None:
-		# 	try:
-		# 		if self.camera is not None:
-		# 			connect_camera(self.camera)
-		# 			self.stream_source = create_stream_source(self.camera)
-		# 		else:
-		# 			return
-		# 	except:
-		# 		print("Can not open the camera!")
+    def on_rec_start_stop(self, event):
+        print("Sequence Timer ID: ", self.rec_timer.Id)
+        if self.t_vid.IsToggled():
+            # Start recording
+            self.rec_timer.Start(self.recording_time)
+        else:
+            self.rec_timer.Stop()
+            # Stop recording
+        # print("Is toggled? ", self.t_vid.IsToggled())
 
-		# 	try:
-		# 		start_grabbing(self.stream_source)
-		# 		self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
-		# 		self.panel_cam_img.start()	
-		# 		# self.t_stop.Enable(True)
-		# 		# self.t_start.Enable(False)
-		# 	except:
-		# 		print("Can not start grabbing images!")
+    def on_rec_timer(self, event):
+        if event.Id == self.rec_timer.Id:
+            print("Current Event ID: ", event.Id)
+            evt = wx.PyCommandEvent(
+                wx.wxEVT_COMMAND_TOOL_CLICKED, self.t_scr_sht.GetId()
+            )
+            wx.PostEvent(self, evt)
+        if event.Id == self.track_timer.Id:
+            self.track_wr_point()
+        # .GetEventHandler().ProcessEvent()
 
-			# exp_time = getExposureTime(self.camera)
-			# # exp_time = 1000
-			# self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
-			# self.exp_text.SetValue(str(exp_time))
-			# self.exp_slider.SetValue(exp_time)
+    def on_video_rate(self, event):
+        # print(event.GetPosition())
+        self.recording_time = int(self.video_rate.GetValue())
+        # self.tracking_time = int(event.GetPosition())
+        # return
 
-			# gain = getGain(self.camera)
-			# # gain = 1
-			# self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
-			# self.gain_text.SetValue(str(gain))
-			# self.gain_slider.SetValue(gain)
-	
-	def on_acq_stop(self, event):
-		if self.camera is not None: ## Here should be checking that acqusution was started at first 
-			self.panel_cam_img.stop()
-		# if self.stream_source is not None:
-		# 	self.panel_cam_img.stop()
-		# 	stop_grabbing(self.stream_source)
-		# 	close_stream_source(self.stream_source, self.camera)
-		# 	self.stream_source = None
+    def on_rec_dir(self, event):
+        path = event.GetPath()
+        if os.path.exists(path):
+            self.rec_save_path = path
 
-			# self.t_stop.Enable(False)
-			# self.t_start.Enable(True)
-			
-	def on_line_len_text(self, event):
-		self.panel_cam_img.cross_line_len = int(event.GetValue())
+    def on_track_saving_dir(self, event):
+        path = event.GetPath()
+        if os.path.exists(path):
+            self.panel_cam_img.track_path = path
 
-	def on_tracking_appl(self, event):
-		self.panel_cam_img.tracking_arr = []
-		self.panel_cam_img.init_tracking = True
+    def on_screenshot(self, event):
+        print("Screenshot buttom pressed!")
+        self.panel_cam_img.make_screenshot(self.rec_save_path)
 
-	def on_timebin_text(self, event):
-		self.tracking_time = int(self.time_bin.GetValue()*1000)
-		
+    def on_acq_start(self, event):
+        if self.camera is not None:
+            self.panel_cam_img.camera = self.camera
+            self.panel_cam_img.start()
 
-	def on_tracking_start_stop(self, event):
-		if self.panel_cam_img.tracking_arr == []:
-			wx.MessageBox("Please fix tracking start point first!", "INFO", wx.OK | wx.ICON_INFORMATION)
-			return 
-		if self.t_track.IsToggled():
-			# Start recording
-			self.track_timer.Start(self.tracking_time)
-			# self.panel_cam_img.collect_centers = True
-		else:
-			self.track_timer.Stop()
-			# self.panel_cam_img.collect_centers = False
-			# print('Track: ', self.panel_cam_img.tracking_arr)
-		# return super().on_tracking_start_stop(event)
+    # if self.stream_source is None:
+    # 	try:
+    # 		if self.camera is not None:
+    # 			connect_camera(self.camera)
+    # 			self.stream_source = create_stream_source(self.camera)
+    # 		else:
+    # 			return
+    # 	except:
+    # 		print("Can not open the camera!")
 
-	def track_wr_point(self):
-		self.panel_cam_img.collect_centers = True
-	
-	def on_exp_enter(self, event):
-		new_exp_time = float(self.exp_text.GetValue())
-		print("New exp_time:", new_exp_time)
-		exp_time = self.camera.set_exposure(new_exp_time)
-		self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
-		self.exp_slider.SetValue(exp_time)
+    # 	try:
+    # 		start_grabbing(self.stream_source)
+    # 		self.panel_cam_img.callback = lambda : get_frame(self.stream_source)
+    # 		self.panel_cam_img.start()
+    # 		# self.t_stop.Enable(True)
+    # 		# self.t_start.Enable(False)
+    # 	except:
+    # 		print("Can not start grabbing images!")
 
-	def on_gain_enter(self, event):
-		new_gain = float(self.gain_text.GetValue())
-		print("New gain:", new_gain)
-		gain = self.camera.set_gain(new_gain)
-		print(type(gain))
-		self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
-		self.gain_slider.SetValue(gain)
+    # exp_time = getExposureTime(self.camera)
+    # # exp_time = 1000
+    # self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
+    # self.exp_text.SetValue(str(exp_time))
+    # self.exp_slider.SetValue(exp_time)
 
-	def on_update_fps(self, event):
-		self.statusbar.SetStatusText("Real fps: {:d}".format(event.fps), 1)
+    # gain = getGain(self.camera)
+    # # gain = 1
+    # self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
+    # self.gain_text.SetValue(str(gain))
+    # self.gain_slider.SetValue(gain)
 
-	def on_update_intensity(self, event):
-		self.statusbar.SetStatusText("Max. intensity: {}".format(event.intensity), 5)
+    def on_acq_stop(self, event):
+        if (
+            self.camera is not None
+        ):  ## Here should be checking that acqusution was started at first
+            self.panel_cam_img.stop()
+        # if self.stream_source is not None:
+        # 	self.panel_cam_img.stop()
+        # 	stop_grabbing(self.stream_source)
+        # 	close_stream_source(self.stream_source, self.camera)
+        # 	self.stream_source = None
 
+        # self.t_stop.Enable(False)
+        # self.t_start.Enable(True)
 
-	def on_close(self, event):
-		self.panel_cam_img.stop()
-		if self.stream_source is not None:
-			self.panel_cam_img.stop()
-			# self.camera.disconnect()
-			# stop_grabbing(self.stream_source)
-			# close_stream_source(self.stream_source, self.camera)
-		cv2.destroyAllWindows()
-		
-		self.Destroy()
-		wx.Exit()
+    def on_line_len_text(self, event):
+        self.panel_cam_img.cross_line_len = int(event.GetValue())
 
+    def on_tracking_appl(self, event):
+        self.panel_cam_img.tracking_arr = []
+        self.panel_cam_img.init_tracking = True
 
-	# def __del__( self ):
-	# 	if self.stream_source is not None:
-	# 		self.panel_cam_img.stop()
-	# 		# self.camera.disconnect()
-	# 		stop_grabbing(self.stream_source)
-	# 		close_stream_source(self.stream_source, self.camera)
-	# 	cv2.destroyAllWindows()
-	# 	pass
+    def on_timebin_text(self, event):
+        self.tracking_time = int(self.time_bin.GetValue() * 1000)
 
-	def opt_cam_start( self, event ):
-		options = Camera_Options_Handler(parent=self)
-		options.Show()
-		print("Non blocking")
+    def on_tracking_start_stop(self, event):
+        if self.panel_cam_img.tracking_arr == []:
+            wx.MessageBox(
+                "Please fix tracking start point first!",
+                "INFO",
+                wx.OK | wx.ICON_INFORMATION,
+            )
+            return
+        if self.t_track.IsToggled():
+            # Start recording
+            self.track_timer.Start(self.tracking_time)
+            # self.panel_cam_img.collect_centers = True
+        else:
+            self.track_timer.Stop()
+            # self.panel_cam_img.collect_centers = False
+            # print('Track: ', self.panel_cam_img.tracking_arr)
+        # return super().on_tracking_start_stop(event)
+
+    def track_wr_point(self):
+        self.panel_cam_img.collect_centers = True
+
+    def on_exp_enter(self, event):
+        new_exp_time = float(self.exp_text.GetValue())
+        print("New exp_time:", new_exp_time)
+        exp_time = self.camera.set_exposure(new_exp_time)
+        self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
+        self.exp_slider.SetValue(exp_time)
+
+    def on_gain_enter(self, event):
+        new_gain = float(self.gain_text.GetValue())
+        print("New gain:", new_gain)
+        gain = self.camera.set_gain(new_gain)
+        print(type(gain))
+        self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
+        self.gain_slider.SetValue(gain)
+
+    def on_update_fps(self, event):
+        self.statusbar.SetStatusText("Real fps: {:d}".format(event.fps), 1)
+
+    def on_update_intensity(self, event):
+        self.statusbar.SetStatusText("Max. intensity: {}".format(event.intensity), 5)
+
+    def on_close(self, event):
+        self.panel_cam_img.stop()
+        # if self.stream_source is not None:
+        #     self.panel_cam_img.stop()
+            # self.camera.disconnect()
+            # stop_grabbing(self.stream_source)
+            # close_stream_source(self.stream_source, self.camera)
+        cv2.destroyAllWindows()
+
+        self.Destroy()
+        wx.Exit()
+
+    # def __del__( self ):
+    # 	if self.stream_source is not None:
+    # 		self.panel_cam_img.stop()
+    # 		# self.camera.disconnect()
+    # 		stop_grabbing(self.stream_source)
+    # 		close_stream_source(self.stream_source, self.camera)
+    # 	cv2.destroyAllWindows()
+    # 	pass
+
+    def opt_cam_start(self, event):
+        options = Camera_Options_Handler(parent=self)
+        options.Show()
+        print("Non blocking")
+
 
 class Camera_Options_Handler(Camera_Options_Frame):
-	def __init__( self, *args, parent=None, **kw):
-		Camera_Options_Frame.__init__ ( self, *args, parent=None, **kw)
-		self.parent = parent
-		# self.devices = FilterGraph().get_input_devices()
-		# self.cameras_list.Set(self.devices)
-		# self.cameras_list.SetSelection(0)
-		# print(self.devices)
+    def __init__(self, *args, parent=None, **kw):
+        Camera_Options_Frame.__init__(self, *args, parent=None, **kw)
+        self.parent = parent
+        # self.devices = FilterGraph().get_input_devices()
+        # self.cameras_list.Set(self.devices)
+        # self.cameras_list.SetSelection(0)
+        # print(self.devices)
 
-	def on_apply(self, event):
-		# camera_id = self.cameras_list.GetString(self.cameras_list.GetSelection())
-		backend = self.backends_list.GetString(self.backends_list.GetSelection())
-		self.camera = Camera(backend=backend) # Setup camera object
+    def on_apply(self, event):
+        # camera_id = self.cameras_list.GetString(self.cameras_list.GetSelection())
+        backend = self.backends_list.GetString(self.backends_list.GetSelection())
+        self.camera = Camera("Camera_AV")  # Setup camera object
+        self.parent.gain_slider.SetRange(*self.camera.param_list["gain_range"])
+        self.parent.gain_text.SetIncrement(self.camera.param_list["gain_increment"])
+        self.parent.exp_slider.SetRange(*self.camera.param_list["exposure_range"])
+        self.parent.exp_text.SetIncrement(self.camera.param_list["exposure_increment"])
+        
 
-	def on_close(self, event):
-		self.Destroy()
+    def on_close(self, event):
+        self.Destroy()
 
-	def on_cancel(self, event):
-		self.Destroy()
+    def on_cancel(self, event):
+        self.Destroy()
 
-	def __del__( self ):
-		pass
+    def __del__(self):
+        pass
+
+
 # class Camera_Setup_Handlers(Camera_Setup):
-	
+
 # 	def __init__( self, *args, parent=None, **kw):
 # 		Camera_Setup.__init__ ( self, *args, **kw)
 # 		graph = FilterGraph()
 # 		self.parent = parent
-		# self.devices = graph.get_input_devices()
+# self.devices = graph.get_input_devices()
 # 		self.cameras_list.Set(self.devices)
 # 		self.cameras_list.SetValue(self.devices[0])
 # 		self.res = {
@@ -330,10 +364,10 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 	def __del__(self):
 # 		pass
 # class Measure_Menu_Handlers ( Measure_Menu ):
-	
+
 # 	def __init__( self, *args, **kw):
 # 		Measure_Menu.__init__ ( self, *args, **kw)
-		
+
 # 		self.init_table()
 # 		self.Bind(wx.EVT_CLOSE, self.on_close)
 
@@ -409,7 +443,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 		self.path = self.table_obj.path
 # 		self.data = None
 # 		self.init_combo()
-	
+
 # 	def init_combo(self):
 # 		if os.path.exists(self.path):
 # 			with open(self.path, mode ='r')as file:
@@ -468,10 +502,10 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 				file.write('Name,Reflection')
 # 				for key in self.data.keys():
 # 					file.write('\r{},{}'.format(key,self.data[key]))
-			
+
 # 			self.table_obj.init_table()
 # 			self.init_combo()
-	
+
 # 	def on_rm_close(self, event):
 # 		self.Destroy()
 
@@ -541,13 +575,13 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 		cal = Meas_Helper_Cal_Handlers(None, parent=self)
 # 		cal.Show()
 # 		self.Hide()
-	
+
 # 	def on_close_helper(self, event):
 # 		self.Destroy()
 
 # 	def __del__(self):
 # 		pass
-			
+
 
 # class Meas_Helper_Cal_Handlers(Meas_Helper_Cal):
 # 	def __init__( self, *args, parent = None, **kw):
@@ -603,13 +637,13 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 			self.id_idx_dict[str( self.samples_btn_cancel[idx].Id)] = idx
 
 # 			# self.id_idx_dict[str(idx)] = [self.samples_btn_meas[idx].Id, self.samples_btn_cancel[idx].Id]
-		
+
 # 		self.SetSizer( self.fgSizer9 )
 # 		self.Layout()
 
 # 	def on_btn_meas(self, event):
 # 		self.current_meas_idx = self.id_idx_dict[str(event.Id)]
-# 		try: 
+# 		try:
 # 			if len(self.current_meas_table[str(self.current_meas_idx)]) > 0:
 # 				pass
 # 		except:
@@ -646,7 +680,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 
 # 		self.check_meas_ready()
 
-	
+
 # 	def check_meas_ready(self):
 # 		try:
 # 			k = 0
@@ -694,7 +728,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 		y = np.array(y)
 
 # 		# Define the degree of the polynomial
-		
+
 # 		print("degree: ", degree)
 
 # 		self.fit = np.poly1d(np.polyfit(x, y, degree))
@@ -740,10 +774,10 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 		pass
 
 # class Lens_Setup_Handlers ( Lens_Setup ):
-	
+
 # 	def __init__( self, *args, parent = None, **kw):
 # 		Lens_Setup.__init__ ( self, *args, **kw)
-		
+
 # 		self.data_lens = [[],[]]
 # 		self.parent = parent
 # 		self.path_lens = os.path.join("data", "lenses.csv")
@@ -755,7 +789,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 	class Lens_Add_Cal_Handlers ( Lens_Add_Cal ):
 # 		def __init__( self, *args, value = None, parent = None, **kw):
 # 			Lens_Add_Cal.__init__ ( self, *args, **kw)
-			
+
 # 			if value is not None:
 # 				self.length_pxl.SetValue(str(value))
 
@@ -785,7 +819,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 		def __del__( self ):
 # 		# Disconnect Events
 # 			pass
-		
+
 # 		def on_close(self, event):
 # 			wx.PostEvent(self.post_event_to, OnLensCalibrationStop(1))
 # 			self.Destroy()
@@ -892,7 +926,7 @@ class Camera_Options_Handler(Camera_Options_Frame):
 # 				for key in data_dict:
 # 					# print()"Key"
 # 					file.write('\r{},{}'.format(key, data_dict[key]))
-			
+
 # 			self.init_table()
 
 # 	def on_lens_stp_cancel_btn( self, event ):
@@ -905,4 +939,3 @@ class Camera_Options_Handler(Camera_Options_Frame):
 
 # 	def __del__(self):
 # 		pass
-
