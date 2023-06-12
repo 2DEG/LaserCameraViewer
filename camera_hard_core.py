@@ -18,7 +18,7 @@ import cProfile
 
 g_cameraStatusUserInfo = b"statusInfo"
 #test
-
+#2nd comment
 def deviceLinkNotify(connectArg, linkInfo):
 	if ( EVType.offLine == connectArg.contents.m_event ):
 		print("camera has off line, userInfo [%s]" %(c_char_p(linkInfo).value))
