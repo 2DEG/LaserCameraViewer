@@ -65,6 +65,7 @@ class Frame_Handlers(Main_Frame):
         # 	self.camera = cameraList[0]
 
         self.camera = Camera("Camera_AV")
+        self.camera.event_catcher = self.panel_cam_img
         # self.camera = None ## TODO Check if the camera is set, when starting the acquis.
         # self.backend = None
         self.stream_source = None

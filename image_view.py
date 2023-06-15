@@ -30,7 +30,7 @@ class ImageView(wx.Panel):
 
 		self.backBrush = wx.Brush(wx.BLACK, wx.SOLID)
 
-		# self.SetDoubleBuffered(True)
+		self.SetDoubleBuffered(True) # This is the key to stop flicker (!!!)
 
 		self.Bind(wx.EVT_SHOW, self.on_show)
 		self.Bind(wx.EVT_PAINT, self.on_paint)
