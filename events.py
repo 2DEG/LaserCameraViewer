@@ -20,14 +20,22 @@ EVT_PASS_FPS = wx.NewId()
 
 EVT_BEAM_CENTERS = wx.NewId()
 
-## ADF Camera events
-EVT_ADF_IMG = wx.NewId()
+## Camera events
+EVT_CAM_IMG = wx.NewId()
+EVT_CAM_PARAM = wx.NewId()
 
-class ADFImage(wx.PyEvent):
+class CAMImage(wx.PyEvent):
 	def __init__(self, img):
 		wx.PyEvent.__init__(self)
 		self.img = img
-		self.SetEventType(EVT_ADF_IMG)
+		self.SetEventType(EVT_CAM_IMG)
+
+class CAMParam(wx.PyEvent):
+	def __init__(self, param: str, val):
+		wx.PyEvent.__init__(self)
+		self.param = param
+		self.val = val
+		self.SetEventType(EVT_CAM_PARAM)
 
 class PassFPS(wx.PyEvent):
 	def __init__(self, array):

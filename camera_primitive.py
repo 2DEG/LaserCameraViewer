@@ -8,7 +8,7 @@ import numpy
 from typing import Any, Optional
 from abc import ABC, abstractmethod
 import wx 
-from events import ADFImage
+from events import CAMImage, CAMParam
 
 
 import cv2
@@ -37,23 +37,6 @@ def resize_if_required(frame: Frame) -> numpy.ndarray:
 	return cv_frame
 
 
-# def create_dummy_frame() -> numpy.ndarray:
-#     cv_frame = numpy.zeros((50, 640, 1), numpy.uint8)
-#     cv_frame[:] = 0
-
-#     cv2.putText(
-#         cv_frame,
-#         "No Stream available. Please connect a Camera.",
-#         org=(30, 30),
-#         fontScale=1,
-#         color=255,
-#         thickness=1,
-#         fontFace=cv2.FONT_HERSHEY_COMPLEX_SMALL,
-#     )
-
-#     return cv_frame
-
-
 def print_all_features(module: FeatureContainer):
 	for feat in module.get_all_features():
 		print_feature(feat)
@@ -74,6 +57,17 @@ def print_feature(feature: FeatureTypes):
 	print("/// SFNC Namespace : {}".format(feature.get_sfnc_namespace()))
 	print("/// Value          : {}\n".format(str(value)))
 
+def get_value(cam: Camera, feat_name: str):
+	val = None
+	feat = cam.get_feature_by_name(feat_name)
+
+	try:
+		val = feat.get()
+	except VmbFeatureError:
+		print("Camera {}: Failed to get value of Feature '{}'".format(cam.get_id(), feat_name))
+
+	if val:
+		return val
 
 def set_nearest_value(cam: Camera, feat_name: str, feat_value: int):
 	# Helper function that tries to set a given value. If setting of the initial value failed
@@ -117,7 +111,6 @@ def try_put_frame(q: queue.Queue, cam: Camera, frame: Optional[Frame]):
 
 	except queue.Full:
 		pass
-
 
 def inheritors(klass):
 	return {child.__name__: child for child in klass.__subclasses__()}
@@ -169,13 +162,12 @@ class Camera(ABC):
 		pass
 
 
-class Camera_AV(Camera, threading.Thread):
+class Camera_AV(Camera,  threading.Thread):
 	"""Class for Allied Vision cameras"""
 
 	def __init__(self, *args, event_catcher= None, **kw):
 		threading.Thread.__init__(self)
-		self.cam_queue = queue.Queue()
-		self.stop_cam_evt = threading.Event()
+		self.command_queue = queue.Queue()
 		self.producer = None
 		self.event_catcher = event_catcher
 
@@ -194,11 +186,11 @@ class Camera_AV(Camera, threading.Thread):
 			pass
 
 	class Producer(threading.Thread):
-		def __init__(self, frame_queue: queue.Queue, event_catcher=None):
+		def __init__(self, command_queue, event_catcher=None):
 			threading.Thread.__init__(self)
-			self.frame_queue = frame_queue
 			self.killswitch = threading.Event()
 			self.event_catcher = event_catcher
+			self.command_queue = command_queue
 
 		def __call__(self, cam: Camera, stream: Stream, frame: Frame):
 			
@@ -207,11 +199,7 @@ class Camera_AV(Camera, threading.Thread):
 			# frame must be copied and the copy must be sent, otherwise the acquired
 			# frame will be overridden as soon as the frame is reused.
 			if frame.get_status() == FrameStatus.Complete:
-				wx.PostEvent(self.event_catcher, ADFImage(frame))
-				# print("Before set")
-			# 	if not self.frame_queue.full():
-			# 		frame_cpy = copy.deepcopy(frame)
-			# 		try_put_frame(self.frame_queue, cam, frame_cpy)
+				wx.PostEvent(self.event_catcher, CAMImage(frame))
 			cam.queue_frame(frame)
 
 		def stop(self):
@@ -230,7 +218,19 @@ class Camera_AV(Camera, threading.Thread):
 
 							try:
 								cam.start_streaming(self)
-								self.killswitch.wait()
+								print("Streaming started")
+								while not self.killswitch.is_set():
+									try:
+										command, value = self.command_queue.get(timeout=0.1) # One may use get_nowait() instead, but it is too fast, so one should handle queue.Empty
+									except queue.Empty:
+										continue
+									else:
+										if value is not None:
+											set_nearest_value(cam, command, value)
+										else:
+											val = get_value(cam, command)
+											if val:
+												wx.PostEvent(self.event_catcher, CAMParam(command, val))
 
 							finally:
 								cam.stop_streaming()
@@ -243,129 +243,36 @@ class Camera_AV(Camera, threading.Thread):
 	def stop(self):
 		self.producer.stop()
 		if self.isAlive():
-			self.stop_cam_evt.set()
 			self.join()
 
+	def join(self, timeout=None):
+		# self.stop()
+		super().join(timeout)
+
 	def run(self):
-		self.producer = self.Producer(self.cam_queue, self.event_catcher)
-		print("Here")
+		self.producer = self.Producer(self.command_queue, self.event_catcher)
 		self.producer.start()
-		print("After producer")
 
 	def get_cam_id(self):
 		pass
 
-	def set_exposure(self, exposure):
-		return self.set_param("exposure", exposure)
+	def set_exposure(self, exposure=200):
+		self.command_queue.put(("ExposureTime", exposure))
+		self.get_exposure()
 
-	def set_gain(self, gain):
-		return self.set_param("gain", gain)
-
-	def set_param(self, param="", val=0):
-		alive = True
-		real = 0
-		if self.producer is not None and self.producer.isAlive():
-			self.producer.stop()
-			alive = False
-
-		try:
-			with VmbSystem.get_instance() as vmb:
-				for cam in vmb.get_all_cameras():
-					print(cam.get_id() == "DEV_1AB22C01054E")
-					with cam:
-						if param == "exposure":
-							try:
-								print(
-									"Exposure before setting: ", cam.ExposureTime.get()
-								)
-								cam.ExposureTime.set(val)
-							except (AttributeError, VmbFeatureError):
-								pass
-
-							try:
-								real = cam.ExposureTime.get()
-								print("Exposure after setting: ", real)
-							except (AttributeError, VmbFeatureError):
-								pass
-
-						elif param == "gain":
-							try:
-								print("Gain before setting: ", cam.Gain.get())
-								cam.Gain.set(val)
-							except (AttributeError, VmbFeatureError):
-								pass
-
-							try:
-								real = cam.Gain.get()
-								print("Gain after setting: ", real)
-							except (AttributeError, VmbFeatureError):
-								pass
-		except VmbCameraError:
-			pass
-
-		if not alive:
-			self.producer.run()
-
-		return real
+	def set_gain(self, gain=1):
+		self.command_queue.put(("Gain", gain))
+		self.get_gain()
 
 	def get_exposure(self):
-		return self.get_param("exposure")
+		self.command_queue.put(("ExposureTime", None))
+		# return self.get_param("exposure")
+		return 200
 
 	def get_gain(self):
-		return self.get_param("gain")
-
-	def get_param(self, param=""):
-		alive = True
-		if self.producer is not None and self.producer.isAlive():
-			self.producer.stop()
-			alive = False
-
-		try:
-			with VmbSystem.get_instance() as vmb:
-				for cam in vmb.get_all_cameras():
-					print(cam.get_id() == "DEV_1AB22C01054E")
-					with cam:
-						try:
-							if param == "exposure":
-								res = cam.ExposureTime.get()
-							elif param == "gain":
-								res = cam.Gain.get()
-						except (AttributeError, VmbFeatureError):
-							pass
-		except VmbCameraError:
-			pass
-
-		if not alive:
-			self.producer.run()
-
-		return res
+		self.command_queue.put(("Gain", None))
+		# return self.get_param("gain")
+		return 1
 
 	def grab_frame(self, n=1):
-		frames = []
-
-		with self.cam_queue.mutex:
-			self.cam_queue.queue.clear()
-		while len(frames) != n:
-			# print("Me")
-			frames_left = self.cam_queue.qsize()
-			# print(frames_left)
-
-			while frames_left:
-				try:
-					_, frame = self.cam_queue.get_nowait()
-
-				except queue.Empty:
-					break
-
-				# Add/Remove frame from current state.
-				if frame:
-					# frame = frame.convert_pixel_format(opencv_display_format).as_opencv_image()
-					# print(frame)
-					# frame = cv2.COLOR_GRAY2RGB(frame)
-					frames.append(frame)
-
-				else:
-					frames.pop()
-
-				frames_left -= 1
-		return frames
+		pass

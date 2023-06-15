@@ -16,7 +16,7 @@ from vmbpy import *
 from camera_primitive import *
 
 from image_view import ImageView
-from events import EVT_LENS_CALIBRATION_INIT, EVT_LENS_CALIBRATION_STOP, CropEvent, OnLensCalibration, UpdateIntensity, OnBeamCenters, EVT_ADF_IMG
+from events import EVT_LENS_CALIBRATION_INIT, EVT_LENS_CALIBRATION_STOP, CropEvent, OnLensCalibration, UpdateIntensity, OnBeamCenters
 
 
 class StoppableThread(Thread):
@@ -46,11 +46,13 @@ class IntervalTimer(StoppableThread):
 
 class VideoView(ImageView):
 
-	def __init__(self, *args, camera= None, callback=None, **kw):
+	def __init__(self, *args, camera= None, parent=None, **kw):
 		ImageView.__init__(self, *args, **kw)
+		self.parent = parent
 
 		# self.camera = Camera(print)
 		self.camera = camera
+		self.cam_backend = None
 		self.interval = None
 		# self.callback = self.camera.grab_frame
 		# self.callback = callback
@@ -90,8 +92,6 @@ class VideoView(ImageView):
 		self.make_screen_shot = False
 		self.rec_path = os.path.dirname(os.path.realpath(__file__))
 		self.track_path = os.path.dirname(os.path.realpath(__file__))
-
-		self.Connect(-1, -1, EVT_ADF_IMG, self.player)
 		# self.overlay = wx.Overlay()
 
 	# def __call__(self, cam: Camera, event: CameraEvent):
@@ -181,13 +181,9 @@ class VideoView(ImageView):
 	
 	def player(self, event):
 		frame = None
-		if self.camera is not None:
-			# frame = self.camera.grab_frame()
+		if 1:
 			frame = event.img
-			# print("Frame: ", frame)
-			# print("Frame: ", frame)
-			# frame = self.callback()
-			# print(frame)
+
 			if frame is not None:
 				# print("Inside Player")
 				frame = frame.convert_pixel_format(opencv_display_format).as_opencv_image()
@@ -260,18 +256,20 @@ class VideoView(ImageView):
 
 	def start(self):
 		# self.interval = IntervalTimer(1/100, self.player)
-		
-		self.camera = Camera('Camera_AV')
-		self.camera.event_catcher = self
-		if self.camera is not None:
-			self.camera.start()
+		pass
+		# if self.cam_backend is not None:
+		# 	self.camera = Camera(self.cam_backend)
+		# 	self.camera.event_catcher = self.parent
+		# if self.camera is not None:
+		# 	self.camera.start()
 			# self.interval.start()
 
 	def stop(self):
-		if self.interval is not None:
-			self.interval.stop()
-		if self.camera is not None:
-			self.camera.stop()
+		# if self.interval is not None:
+		# 	self.interval.stop()
+		# if self.camera is not None:
+		# 	self.camera.stop()
+		# 	self.camera = None
 			# self.camera.join()
 		self.hide = True
 		self.set_default_image()
