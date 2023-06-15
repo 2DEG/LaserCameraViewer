@@ -8,7 +8,7 @@ import numpy
 from typing import Any, Optional
 from abc import ABC, abstractmethod
 import wx 
-from events import CAMImage, CAMParam
+from events import CAMImage, CAMParam, CAMInit
 
 
 import cv2
@@ -121,7 +121,7 @@ class Camera(ABC):
 	def __init__(self, *args, **kwargs):
 		super().__init__()
 
-	def __new__(cls, backend):
+	def __new__(cls, backend, event_catcher=None):
 		subclasses = inheritors(cls)
 		if not backend in subclasses.keys():
 			raise ValueError("Invalid backend '{}'".format(backend))
@@ -174,14 +174,22 @@ class Camera_AV(Camera,  threading.Thread):
 		try:
 			with VmbSystem.get_instance() as vmb:
 				for cam in vmb.get_all_cameras():
-					print(cam.get_id() == "DEV_1AB22C01054E")
+					print("Cam ID:", cam.get_id())
 					with cam:
-						self.param_list = {
+						param_list = {
+							"gain": cam.Gain.get(),
 							"gain_range": cam.Gain.get_range(),
 							"gain_increment": cam.Gain.get_increment(),
+							"exposure": cam.ExposureTime.get(),
 							"exposure_range": cam.ExposureTime.get_range(),
 							"exposure_increment": cam.ExposureTime.get_increment(),
+							"height_range": cam.Height.get_range(),
+							"width_range": cam.Width.get_range(),
 						}
+						_, FRAME_HEIGHT = param_list["height_range"]
+						_, FRAME_WIDTH = param_list["width_range"]
+						print("Height, Width: ", FRAME_HEIGHT, FRAME_WIDTH)
+						wx.PostEvent(self.event_catcher, CAMInit(param_list))
 		except VmbCameraError:
 			pass
 

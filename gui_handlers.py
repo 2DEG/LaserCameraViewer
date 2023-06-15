@@ -23,7 +23,8 @@ from events import (
 	OnCalibration,
 	OnLensCalibrationInit,
 	EVT_CAM_IMG,
-	EVT_CAM_PARAM
+	EVT_CAM_PARAM,
+	EVT_CAM_INIT
 )
 import numpy as np
 
@@ -45,6 +46,7 @@ class Frame_Handlers(Main_Frame):
 		self.backend = "Camera_AV"
 		self.Connect(-1, -1, EVT_CAM_IMG, self.panel_cam_img.player)
 		self.Connect(-1, -1, EVT_CAM_PARAM, self.on_param_change)
+		self.Connect(-1, -1, EVT_CAM_INIT, self.on_camera_setup_update)
 
 		# self.camera = None ## TODO Check if the camera is set, when starting the acquis.
 		# self.backend = None
@@ -154,8 +156,8 @@ class Frame_Handlers(Main_Frame):
 		self.panel_cam_img.make_screenshot(self.rec_save_path)
 
 	def on_acq_start(self, event):
-		self.camera = Camera(self.backend)
-		self.camera.event_catcher = self
+		self.camera = Camera(self.backend, event_catcher = self)
+		# self.camera.event_catcher = self
 		if self.camera is not None:
 			self.camera.start()
 
@@ -224,6 +226,23 @@ class Frame_Handlers(Main_Frame):
 			self.exp_text.SetValue(str(value))
 			self.exp_slider.SetValue(value)
 			self.statusbar.SetStatusText("Real exp.: {:.2f}".format(value), 2)
+
+	def on_camera_setup_update(self, event):
+		self.exp_slider.SetRange(*(map(int, event.prop["exposure_range"])))
+		self.exp_slider.SetValue(int(event.prop["exposure"]))
+		self.exp_text.SetRange(*(map(int, event.prop["exposure_range"])))
+		self.exp_text.SetIncrement(int(event.prop["exposure_increment"]))
+		self.exp_text.SetValue(int(event.prop["exposure"]))
+		self.statusbar.SetStatusText("Real exp.: {:.2f}".format(int(event.prop["exposure"])), 2)
+
+		
+		self.gain_slider.SetRange(*(map(int, event.prop["gain_range"])))
+		self.gain_slider.SetValue(int(event.prop["gain"]))
+		self.gain_text.SetRange(*(map(int, event.prop["gain_range"])))
+		self.gain_text.SetIncrement(event.prop["gain_increment"])
+		self.gain_text.SetValue(int(event.prop["gain"]))
+		self.statusbar.SetStatusText("Real gain: {:.2f}".format(int(event.prop["gain"])), 3)
+		
 
 	def on_update_fps(self, event):
 		self.statusbar.SetStatusText("Real fps: {:d}".format(event.fps), 1)

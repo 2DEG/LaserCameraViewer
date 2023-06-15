@@ -21,9 +21,15 @@ EVT_PASS_FPS = wx.NewId()
 EVT_BEAM_CENTERS = wx.NewId()
 
 ## Camera events
+EVT_CAM_INIT = wx.NewId()
 EVT_CAM_IMG = wx.NewId()
 EVT_CAM_PARAM = wx.NewId()
 
+class CAMInit(wx.PyEvent):
+	def __init__(self, prop):
+		wx.PyEvent.__init__(self)
+		self.prop = prop
+		self.SetEventType(EVT_CAM_INIT)
 class CAMImage(wx.PyEvent):
 	def __init__(self, img):
 		wx.PyEvent.__init__(self)
