@@ -7,6 +7,8 @@ from time import sleep
 import numpy
 from typing import Any, Optional
 from abc import ABC, abstractmethod
+import wx 
+from events import ADFImage
 
 
 import cv2
@@ -170,11 +172,12 @@ class Camera(ABC):
 class Camera_AV(Camera, threading.Thread):
 	"""Class for Allied Vision cameras"""
 
-	def __init__(self, *args, **kw):
+	def __init__(self, *args, event_catcher= None, **kw):
 		threading.Thread.__init__(self)
 		self.cam_queue = queue.Queue()
 		self.stop_cam_evt = threading.Event()
 		self.producer = None
+		self.event_catcher = event_catcher
 
 		try:
 			with VmbSystem.get_instance() as vmb:
@@ -191,22 +194,24 @@ class Camera_AV(Camera, threading.Thread):
 			pass
 
 	class Producer(threading.Thread):
-		def __init__(self, frame_queue: queue.Queue):
+		def __init__(self, frame_queue: queue.Queue, event_catcher=None):
 			threading.Thread.__init__(self)
 			self.frame_queue = frame_queue
 			self.killswitch = threading.Event()
+			self.event_catcher = event_catcher
 
 		def __call__(self, cam: Camera, stream: Stream, frame: Frame):
+			
 			# This method is executed within VmbC context. All incoming frames
 			# are reused for later frame acquisition. If a frame shall be queued, the
 			# frame must be copied and the copy must be sent, otherwise the acquired
 			# frame will be overridden as soon as the frame is reused.
 			if frame.get_status() == FrameStatus.Complete:
+				wx.PostEvent(self.event_catcher, ADFImage(frame))
 				# print("Before set")
-				if not self.frame_queue.full():
-					frame_cpy = copy.deepcopy(frame)
-					try_put_frame(self.frame_queue, cam, frame_cpy)
-
+			# 	if not self.frame_queue.full():
+			# 		frame_cpy = copy.deepcopy(frame)
+			# 		try_put_frame(self.frame_queue, cam, frame_cpy)
 			cam.queue_frame(frame)
 
 		def stop(self):
@@ -242,7 +247,7 @@ class Camera_AV(Camera, threading.Thread):
 			self.join()
 
 	def run(self):
-		self.producer = self.Producer(self.cam_queue)
+		self.producer = self.Producer(self.cam_queue, self.event_catcher)
 		print("Here")
 		self.producer.start()
 		print("After producer")

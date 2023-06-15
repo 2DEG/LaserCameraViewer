@@ -16,7 +16,7 @@ from vmbpy import *
 from camera_primitive import *
 
 from image_view import ImageView
-from events import EVT_LENS_CALIBRATION_INIT, EVT_LENS_CALIBRATION_STOP, CropEvent, OnLensCalibration, UpdateIntensity, OnBeamCenters
+from events import EVT_LENS_CALIBRATION_INIT, EVT_LENS_CALIBRATION_STOP, CropEvent, OnLensCalibration, UpdateIntensity, OnBeamCenters, EVT_ADF_IMG
 
 
 class StoppableThread(Thread):
@@ -90,6 +90,8 @@ class VideoView(ImageView):
 		self.make_screen_shot = False
 		self.rec_path = os.path.dirname(os.path.realpath(__file__))
 		self.track_path = os.path.dirname(os.path.realpath(__file__))
+
+		self.Connect(-1, -1, EVT_ADF_IMG, self.player)
 		# self.overlay = wx.Overlay()
 
 	# def __call__(self, cam: Camera, event: CameraEvent):
@@ -177,15 +179,18 @@ class VideoView(ImageView):
 		self.make_screen_shot = True
 		self.rec_path = path
 	
-	def player(self):
-		
+	def player(self, event):
+		frame = None
 		if self.camera is not None:
-			frame = self.camera.grab_frame()
+			# frame = self.camera.grab_frame()
+			frame = event.img
+			# print("Frame: ", frame)
+			# print("Frame: ", frame)
 			# frame = self.callback()
 			# print(frame)
-			if frame != []:
+			if frame is not None:
 				# print("Inside Player")
-				frame = frame[-1].convert_pixel_format(opencv_display_format).as_opencv_image()
+				frame = frame.convert_pixel_format(opencv_display_format).as_opencv_image()
 				frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
 
 				max_inten = frame.max()
@@ -254,11 +259,13 @@ class VideoView(ImageView):
 				wx.CallAfter(self.set_frame, frame)
 
 	def start(self):
-		self.interval = IntervalTimer(1/100, self.player)
+		# self.interval = IntervalTimer(1/100, self.player)
+		
 		self.camera = Camera('Camera_AV')
+		self.camera.event_catcher = self
 		if self.camera is not None:
 			self.camera.start()
-			self.interval.start()
+			# self.interval.start()
 
 	def stop(self):
 		if self.interval is not None:
