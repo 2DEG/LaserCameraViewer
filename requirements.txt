@@ -13,5 +13,5 @@ platformdirs==3.5.3
 six==1.16.0
 tomli==2.0.1
 typing_extensions==4.6.3
-vmbpy @ file:///C:/Program%20Files/Allied%20Vision/Vimba%20X/api/python/vmbpy-1.0.2-py3-none-any.whl#sha256=3eaab2d2fe975c40edbbcc49409e46cfc73393fc771c2c39125bcec27cda0775
+vmbpy == 0.0.1
 wxPython==4.2.1
