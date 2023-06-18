@@ -4,6 +4,7 @@ import os
 from interface.interface import Main_Frame, Camera_Options_Frame
 
 from cameras.camera_av import *
+from cameras.camera_dahua import *
 from events.events import (
     EVT_ON_CROP,
     EVT_ENOUGH_POINTS,
@@ -23,6 +24,7 @@ from events.events import (
     EVT_CAM_INIT,
 )
 
+
 class Frame_Handlers(Main_Frame):
     def __init__(self, *args, **kw):
         Main_Frame.__init__(self, *args, **kw)
@@ -30,7 +32,8 @@ class Frame_Handlers(Main_Frame):
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
         self.camera = None
-        self.backend = "Camera_AV"
+        # self.backend = "Camera_AV"
+        self.backend = "DahuaCamera"
         self.Connect(-1, -1, EVT_CAM_IMG, self.panel_cam_img.player)
         self.Connect(-1, -1, EVT_CAM_PARAM, self.on_param_change)
         self.Connect(-1, -1, EVT_CAM_INIT, self.on_camera_setup_update)
@@ -280,4 +283,3 @@ class Camera_Options_Handler(Camera_Options_Frame):
 
     def __del__(self):
         pass
-

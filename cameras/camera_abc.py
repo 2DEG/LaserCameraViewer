@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 
+
 def inheritors(klass):
     return {child.__name__: child for child in klass.__subclasses__()}
+
 
 ## Abstract camera class
 class Camera_ABC(ABC):

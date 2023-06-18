@@ -25,7 +25,7 @@ from events.events import (
 
 
 class VideoView(ImageView):
-    def __init__(self, *args, camera=None , **kw):
+    def __init__(self, *args, camera=None, **kw):
         ImageView.__init__(self, *args, **kw)
 
         self.meas_on = False
@@ -66,7 +66,6 @@ class VideoView(ImageView):
         self.track_path = os.path.dirname(os.path.realpath(__file__))
         # self.overlay = wx.Overlay()
 
-
     def on_click(self, event):
         self.CaptureMouse()
         self.rect_start = recalculate_coord(
@@ -74,7 +73,6 @@ class VideoView(ImageView):
             best_size=self.get_best_size(),
             img_size=self.image.GetSize(),
         )
-
 
     def on_mouse_move(self, event):
         if event.Dragging() and event.LeftIsDown():
@@ -93,7 +91,6 @@ class VideoView(ImageView):
                 if self.rect_end == self.rect_start:
                     self.rect_end = self.rect_start[0] + 1, self.rect_start[1] + 1
                 self.zoom_pipeline.append([self.rect_start, self.rect_end])
-
 
     def on_zoomout(self, event):
         # self.rect_crop = False
@@ -115,7 +112,6 @@ class VideoView(ImageView):
             if self.radius < 5:
                 self.radius = 5
 
-
     def make_screenshot(self, path):
         print("Make screent function entered!")
         self.make_screen_shot = True
@@ -125,6 +121,7 @@ class VideoView(ImageView):
         frame = None
         if 1:
             frame = event.img
+            # print("Frame: ", frame)
 
             if frame is not None:
                 frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
