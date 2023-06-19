@@ -43,7 +43,7 @@ class Frame_Handlers(Main_Frame):
         self.camera = None
         for each in BACKENDS:
             print(each)
-            camera_test = Camera_ABC(each)
+            camera_test = Camera_ABC(each, event_catcher=self)
             camera_cnt, camera_list = camera_test.enum_cameras()
             print('Camera cnt: ', camera_cnt, 'Camera list: ', camera_list)
 
