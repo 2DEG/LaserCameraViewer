@@ -1,6 +1,5 @@
 import wx
 import cv2
-import numpy as np
 import os
 import csv
 
@@ -8,8 +7,6 @@ from PIL import Image
 from datetime import datetime
 
 
-from time import sleep
-from threading import Thread, Event
 from vmbpy import *
 
 
@@ -68,8 +65,9 @@ class VideoView(ImageView):
 
     def on_click(self, event):
         self.CaptureMouse()
+        x, y  = event.GetPosition()
         self.rect_start = recalculate_coord(
-            coord=event.GetPosition(),
+            coord=[int(x), int(y)],
             best_size=self.get_best_size(),
             img_size=self.image.GetSize(),
         )
@@ -77,8 +75,9 @@ class VideoView(ImageView):
     def on_mouse_move(self, event):
         if event.Dragging() and event.LeftIsDown():
             self.draw_rect = True
+            x, y  = event.GetPosition()
             self.rect_end = recalculate_coord(
-                coord=event.GetPosition(),
+                coord=[int(x), int(y)],
                 best_size=self.get_best_size(),
                 img_size=self.image.GetSize(),
             )
@@ -118,76 +117,53 @@ class VideoView(ImageView):
         self.rec_path = path
 
     def player(self, event):
-        frame = None
-        if 1:
-            frame = event.img
-            # print("Frame: ", frame)
+        frame = event.img
+        # print("Frame: ", frame)
 
-            if frame is not None:
-                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        if frame is not None:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+            wx.PostEvent(self, UpdateIntensity(frame.max()))
 
-                max_inten = frame.max()
+            if self.make_screen_shot:
+                self.save_screenshot(frame)
 
-                if self.make_screen_shot:
-                    print("Player is ready for screenshot")
-                    if os.path.exists(self.rec_path):
-                        print("Screenshot path is valid!")
-                        dt = datetime.now().strftime("%d%m%Y_%Hh%Mm%Ss")
-                        im = Image.fromarray(frame)
-                        im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
-                    self.make_screen_shot = False
+            frame, ellipse_centers = detect_ellipses(frame, self.cross_line_len)
+            # frame, ellipse_centers = frame, []
 
-                # frame, ellipse_centers = detect_ellipses(frame, self.cross_line_len)
-                frame, ellipse_centers = frame, None
+            if len(ellipse_centers) != 0:
+                wx.PostEvent(self, OnBeamCenters(ellipse_centers))
 
-                if ellipse_centers is not None:
-                    wx.PostEvent(self, OnBeamCenters(ellipse_centers))
+            if self.init_tracking:
+                if os.path.exists(self.track_path):
+                    print("Tracking path is valid!")
+                    dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
+                    self.tracking_file = os.path.join(
+                        self.track_path, "{}.csv".format(dt)
+                    )
 
-                if self.init_tracking:
-                    self.tracking_arr.append(ellipse_centers)
-                    if os.path.exists(self.track_path):
-                        print("Tracking path is valid!")
-                        dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
-                        self.tracking_file = os.path.join(
-                            self.track_path, "{}.csv".format(dt)
-                        )
-                        with open(self.tracking_file, "a") as my_csv:
-                            csvWriter = csv.writer(my_csv, delimiter=",")
-                            csvWriter.writerows(ellipse_centers)
-                    self.init_tracking = False
+                    self.update_tracking_data(ellipse_centers)
+                self.init_tracking = False
 
-                if self.collect_centers:
-                    self.tracking_arr.append(ellipse_centers)
-                    with open(self.tracking_file, "a") as my_csv:
-                        csvWriter = csv.writer(my_csv, delimiter=",")
-                        csvWriter.writerows(ellipse_centers)
-                    self.collect_centers = False
-                    # self.init_tracking = False
+            if self.collect_centers:
+                self.update_tracking_data(ellipse_centers)
+                self.collect_centers = False
+                # self.init_tracking = False
 
-                wx.PostEvent(self, UpdateIntensity(max_inten))
+            if self.zoom_pipeline != []:
+                # if self.rect_start is not None and self.rect_end is not None:
+                for each in self.zoom_pipeline:
+                    # print(each)
+                    frame = frame[
+                        min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]),
+                        min(each[0][0], each[1][0]) : max(each[0][0], each[1][0]),
+                    ]
+                    # print(frame.shape)
 
-                if self.zoom_pipeline != []:
-                    # if self.rect_start is not None and self.rect_end is not None:
-                    for each in self.zoom_pipeline:
-                        # print(each)
-                        frame = frame[
-                            min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]),
-                            min(each[0][0], each[1][0]) : max(each[0][0], each[1][0]),
-                        ]
-                        # print(frame.shape)
+            if self.draw_rect:
+                # print("HI!")
+                frame = self.draw_rectangle(frame)
 
-                if self.draw_rect:
-                    # print("HI!")
-                    if self.rect_start is not None and self.rect_end is not None:
-                        frame = cv2.rectangle(
-                            frame,
-                            self.rect_start,
-                            self.rect_end,
-                            (255, 0, 0),
-                            thickness=2,
-                        )
-
-                wx.CallAfter(self.set_frame, frame)
+            wx.CallAfter(self.set_frame, frame)
 
     def start(self):
         pass
@@ -196,17 +172,28 @@ class VideoView(ImageView):
         self.hide = True
         self.set_default_image()
 
+    def update_tracking_data(self, data):
+        self.tracking_arr.append(data)
+        with open(self.tracking_file, "a") as my_csv:
+            csvWriter = csv.writer(my_csv, delimiter=",")
+            csvWriter.writerows(data)
 
-def crop_circle_area(frame, x_y_coord, rad, thickness=-1):
-    height, width, _ = frame.shape
-    # print(height, width)
-    mask = np.zeros((height, width), np.uint8)
-    circle_img = cv2.circle(mask, x_y_coord, rad, (1, 1, 1), thickness=thickness)
-    image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return image * circle_img, cv2.circle(
-        frame, x_y_coord, rad, (255, 0, 0), thickness=2
-    )
+    def draw_rectangle(self, frame):
+        if self.rect_start is not None and self.rect_end is not None:
+            return cv2.rectangle(
+                frame,
+                self.rect_start,
+                self.rect_end,
+                (255, 0, 0),
+                thickness=2,
+            )
 
+    def save_screenshot(self, frame):
+        if os.path.exists(self.rec_path):
+            dt = datetime.now().strftime("%d%m%Y_%Hh%Mm%Ss")
+            im = Image.fromarray(frame)
+            im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
+        self.make_screen_shot = False
 
 def recalculate_coord(coord, best_size, img_size):
     (circ_x, circ_y) = coord
@@ -220,19 +207,7 @@ def recalculate_coord(coord, best_size, img_size):
 
 
 def detect_ellipses(img, length=100):
-    # Load picture, convert to grayscale and detect edges
-    # image_rgb = data.coffee()[0:220, 160:420]
-    # image_gray = color.rgb2gray(image_rgb)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    # (_, gray, _) = cv2.split(img)
-    # r_b = numpy.zeros(gray.shape, numpy.uint8)
-    # new_y = new_y.astype(np.uint8)
-    # print(r_b.shape)
-    # print(gray.shape)
-    # img = cv2.merge((r_b, gray, r_b))
-    img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
-    # edges = canny(gray, sigma=2.0, low_threshold=0.55, high_threshold=0.8)
-
     thresh = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)[1]
 
     # Dilate with elliptical shaped kernel
@@ -248,26 +223,18 @@ def detect_ellipses(img, length=100):
 
     for c in cnts:
         area = cv2.contourArea(c)
-        # print("Hi!")
         if area > 50:
-            ellipse = cv2.fitEllipse(c)
-            # print(ellipse)
-            # (xc, yc), (ax, by, e = cv2.fitEllipse(c)
-            # print(ellipse[0])
+            try:
+                ellipse = cv2.fitEllipse(c)
+            except:
+                continue
             a, b = ellipse[0]
             a = int(a)
             b = int(b)
             centers.append([a, b])
-            # c = numpy.zeros(gray.shape)
-            # c[a-100:a+100, b-100:b+100] = gray[a-100:a+100, b-100:b+100]
-            # print("Argmax: ", numpy.where(c == c.max()), c.shape)
-            # print("A, B: ", a, b)
             delta = length
-            # print(a, b)
-            # cv2.ellipse(img, (xc, yc), (ax, by), e, (0,255,0), 2)
             cv2.line(img, (a - delta, b), (a + delta, b), (255, 0, 0), 1)
             cv2.line(img, (a, b - delta), (a, b + delta), (255, 0, 0), 1)
-            # cv2.circle(img, (int(a), int(b)), 1, (0, 0, 255), 3)
             cv2.ellipse(img, ellipse, (0, 255, 0), 2)
 
     return img, centers

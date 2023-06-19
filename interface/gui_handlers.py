@@ -4,7 +4,7 @@ import os
 from interface.interface import Main_Frame, Camera_Options_Frame
 
 from cameras.camera_av import *
-from cameras.camera_dahua import *
+import platform
 from events.events import (
     EVT_ON_CROP,
     EVT_ENOUGH_POINTS,
@@ -24,6 +24,15 @@ from events.events import (
     EVT_CAM_INIT,
 )
 
+BACKENDS = ["Camera_AV", "DahuaCamera"]
+
+if platform.system() == "Windows":
+    from cameras.camera_dahua import *
+    PLATFORM = "Windows"
+elif platform.system() == "Linux":
+    PLATFORM = "Linux"
+    BACKENDS.pop(BACKENDS.index("DahuaCamera"))
+
 
 class Frame_Handlers(Main_Frame):
     def __init__(self, *args, **kw):
@@ -32,8 +41,19 @@ class Frame_Handlers(Main_Frame):
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
         self.camera = None
-        # self.backend = "Camera_AV"
-        self.backend = "DahuaCamera"
+        for each in BACKENDS:
+            print(each)
+            camera_test = Camera_ABC(each)
+            camera_cnt, camera_list = camera_test.enum_cameras()
+            print('Camera cnt: ', camera_cnt, 'Camera list: ', camera_list)
+
+            if camera_cnt is None or camera_list == []:
+                continue
+            print("Backend", each, "is available")
+            self.backend = each
+            break
+
+
         self.Connect(-1, -1, EVT_CAM_IMG, self.panel_cam_img.player)
         self.Connect(-1, -1, EVT_CAM_PARAM, self.on_param_change)
         self.Connect(-1, -1, EVT_CAM_INIT, self.on_camera_setup_update)
@@ -146,6 +166,7 @@ class Frame_Handlers(Main_Frame):
         self.panel_cam_img.make_screenshot(self.rec_save_path)
 
     def on_acq_start(self, event):
+        print("Backend: ", self.backend)
         self.camera = Camera_ABC(self.backend, event_catcher=self)
         # self.camera.event_catcher = self
         if self.camera is not None:

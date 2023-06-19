@@ -28,8 +28,8 @@ class DahuaCamera(Camera_ABC, threading.Thread):
         self.open_camera()
         self.trigger_off()
         self.get_usb_info()
-        # self.get_init_setup()
         self.start_grabbing()
+        self.get_init_setup()
 
     def stop(self):
         self.stop_grabbing()
@@ -304,10 +304,10 @@ class DahuaCamera(Camera_ABC, threading.Thread):
         param_list = {
             "gain": self.get_gain_value(),
             "gain_range": self.get_param_min_max("GainRaw"),
-            "gain_increment": 1,
+            "gain_increment": 1, # TODO
             "exposure": self.get_exposure_time(),
             "exposure_range": self.get_param_min_max("ExposureTime"),
-            "exposure_increment": 1,
+            "exposure_increment": 1, # TODO
             "height_range": (1000, 1000),
             "width_range": (1000, 1000),
         }

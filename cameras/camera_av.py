@@ -90,6 +90,7 @@ class Camera_AV(Camera_ABC, threading.Thread):
     """Class for Allied Vision cameras"""
 
     def __init__(self, *args, event_catcher=None, **kw):
+        print("Here!")
         threading.Thread.__init__(self)
         self.command_queue = queue.Queue()
         self.producer = None
@@ -116,6 +117,18 @@ class Camera_AV(Camera_ABC, threading.Thread):
                         wx.PostEvent(self.event_catcher, CAMInit(param_list))
         except VmbCameraError:
             pass
+
+    def enum_cameras(self):
+        cam_list = []
+        print("Here!")
+        with VmbSystem.get_instance() as vmb:
+            for cam in vmb.get_all_cameras():
+                cam_list.append(cam.get_id())
+        
+        if cam_list == []:
+            return None, []
+
+        return len(cam_list), cam_list
 
     class Producer(threading.Thread):
         def __init__(self, command_queue, event_catcher=None):

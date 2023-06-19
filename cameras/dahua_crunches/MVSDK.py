@@ -7,22 +7,18 @@ Created on 2017-10-18
 """
 from ctypes import *
 import os
-from configparser import ConfigParser
+import platform
 
 
-# 定义枚举类型
 def enum(**enums):
     return type("Enum", (), enums)
 
-
-config = ConfigParser()
-config.read("config.ini")
-
-# 加载SDK动态库
-# 32bit
-# MVSDKdll = OleDLL("./dll/x86/MVSDKmd.dll")
-# 64bit
-MVSDKdll = OleDLL(os.path.join(config["dll"]["path"], "MVSDKmd.dll"))
+if platform.architecture()[0] == "32bit":
+    path = os.path.join(os.environ['MV_GENICAM_32'].split("Runtime")[0], 'Development/Samples/Python/dll/x32/MVSDKmd.dll')
+    MVSDKdll = OleDLL(path)
+else:
+    path = os.path.join(os.environ['MV_GENICAM_64'].split("Runtime")[0], 'Development/Samples/Python/dll/x64/MVSDKmd.dll')
+    MVSDKdll = OleDLL(path)
 
 # SDK.h => define 宏定义
 MAX_PARAM_CNT = 1000
