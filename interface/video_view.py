@@ -223,8 +223,10 @@ def detect_ellipses(img, length=100):
     cnts = cnts[0] if len(cnts) == 2 else cnts[1]
 
     centers = []
-
+    k = 0
     for c in cnts:
+        if k > 5:
+            break
         area = cv2.contourArea(c)
         if area > 50:
             try:
@@ -239,5 +241,6 @@ def detect_ellipses(img, length=100):
             cv2.line(img, (a - delta, b), (a + delta, b), (255, 0, 0), 1)
             cv2.line(img, (a, b - delta), (a, b + delta), (255, 0, 0), 1)
             cv2.ellipse(img, ellipse, (0, 255, 0), 2)
+            k += 1
 
     return img, centers
