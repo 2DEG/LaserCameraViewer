@@ -8,7 +8,10 @@ from vmbpy import *
 # All frames will either be recorded in this format, or transformed to it before being displayed
 opencv_display_format = PixelFormat.Mono8
 
-FRAME_HEIGHT = 1080
+# FRAME_HEIGHT = 1544 
+# FRAME_WIDTH = 2064
+
+FRAME_HEIGHT = 1080 
 FRAME_WIDTH = 1080
 
 

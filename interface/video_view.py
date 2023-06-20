@@ -12,10 +12,6 @@ from vmbpy import *
 
 from interface.image_view import ImageView
 from events.events import (
-    EVT_LENS_CALIBRATION_INIT,
-    EVT_LENS_CALIBRATION_STOP,
-    CropEvent,
-    OnLensCalibration,
     UpdateIntensity,
     OnBeamCenters,
     MouseXY,
@@ -23,29 +19,20 @@ from events.events import (
 
 
 class VideoView(ImageView):
-    def __init__(self, *args, camera=None, **kw):
+    """
+    A class used to represent a video view.
+    Inherits from ImageView class.
+    """
+
+    def __init__(self, *args, **kw):
         ImageView.__init__(self, *args, **kw)
 
         self.meas_on = False
         self.run_meas = False
 
-        self.draw_circ = False
-        self.click = False
-        self.radius = 30
-
-        self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
-        self.Bind(wx.EVT_LEFT_UP, self.on_release)
-        self.Bind(wx.EVT_RIGHT_DOWN, self.on_zoomout)
-        # self.Bind( wx.EVT_MOUSEWHEEL, self.on_wheel )
-        self.Bind(wx.EVT_MOTION, self.on_mouse_move)
-
-        self.Connect(-1, -1, EVT_LENS_CALIBRATION_INIT, self.on_init_lens_cal)
-        self.Connect(-1, -1, EVT_LENS_CALIBRATION_STOP, self.on_stop_lens_cal)
-
         self.startPos = None
         self.recentPos = None
         self.start_line = False
-        self.is_lens_calibration = False
 
         self.draw_rect = False
         self.rect_crop = False
@@ -62,9 +49,21 @@ class VideoView(ImageView):
         self.make_screen_shot = False
         self.rec_path = os.path.dirname(os.path.realpath(__file__))
         self.track_path = os.path.dirname(os.path.realpath(__file__))
-        # self.overlay = wx.Overlay()
+
+        # Bind mouse events
+        self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
+        self.Bind(wx.EVT_LEFT_UP, self.on_release)
+        self.Bind(wx.EVT_RIGHT_DOWN, self.on_zoomout)
+        self.Bind(wx.EVT_MOTION, self.on_mouse_move)
 
     def on_click(self, event):
+        """
+        Handles click event and captures mouse.
+
+        Args:
+            event: wxPython event.
+        """
+
         self.CaptureMouse()
         self.rect_start = recalculate_coord(
             coord=event.GetPosition(),
@@ -73,19 +72,34 @@ class VideoView(ImageView):
         )
 
     def on_mouse_move(self, event):
-        # x, y  = event.GetPosition()
+        """
+        Handles mouse move events. Sends updates on mouse position to the status bar.
+        While dragging, draws a rectangle.
+
+        Args:
+            event: wxPython event.
+        """
+
         x, y = recalculate_coord(
-                coord=event.GetPosition(),
-                best_size=self.best_size,
-                img_size=self.image_size,
-            )
+            coord=event.GetPosition(),
+            best_size=self.best_size,
+            img_size=self.image_size,
+        )
         if event.Dragging() and event.LeftIsDown():
             self.draw_rect = True
             self.rect_end = [x, y]
-            # 
+            #
         wx.PostEvent(self, MouseXY(x, y))
 
     def on_release(self, event):
+        """
+        Handles mouse release events.
+        Zooms in on the selected rectangle.
+
+        Args:
+            event: wxPython event.
+        """
+
         if self.HasCapture():
             self.ReleaseMouse()
             self.draw_rect = False
@@ -95,31 +109,37 @@ class VideoView(ImageView):
                 self.zoom_pipeline.append([self.rect_start, self.rect_end])
 
     def on_zoomout(self, event):
-        # self.rect_crop = False
+        """
+        Handles zoom out on a mouse left click.
+
+        Args:
+            event: wxPython event.
+        """
+
         self.rect_end = None
         self.zoom_pipeline = []
         self.rect_start = None
 
-    def on_init_lens_cal(self, event):
-        self.is_lens_calibration = True
-
-    def on_stop_lens_cal(self, event):
-        self.is_lens_calibration = False
-
-    def on_wheel(self, event):
-        if event.GetWheelRotation() < 0:
-            self.radius += 5
-        else:
-            self.radius -= 5
-            if self.radius < 5:
-                self.radius = 5
-
     def make_screenshot(self, path):
-        print("Make screent function entered!")
+        """
+        Prepares for taking a screenshot.
+
+        Args:
+            path: Path to save the screenshot.
+        """
+
         self.make_screen_shot = True
         self.rec_path = path
 
     def player(self, event):
+        """
+        Plays the video feed and handles related activities.
+        Implemented as a callback function, which is called by camera thread when a new frame is available.
+
+        Args:
+            event: wxPython event.
+        """
+
         frame = event.img
         # print("Frame: ", frame)
 
@@ -169,19 +189,41 @@ class VideoView(ImageView):
             wx.CallAfter(self.set_frame, frame)
 
     def start(self):
+        """
+        Starts the video view.
+        """
+
         pass
 
     def stop(self):
+        """
+        Stops the video view and sets the default image.
+        """
+
         self.hide = True
         self.set_default_image()
 
     def update_tracking_data(self, data):
+        """
+        Updates tracking data and write to a csv file.
+
+        Args:
+            data: New tracking data to be appended.
+        """
+
         self.tracking_arr.append(data)
         with open(self.tracking_file, "a") as my_csv:
             csvWriter = csv.writer(my_csv, delimiter=",")
             csvWriter.writerows(data)
 
     def draw_rectangle(self, frame):
+        """
+        Draws a rectangle on the given frame.
+
+        Args:
+            frame: A frame on which a rectangle will be drawn.
+        """
+
         if self.rect_start is not None and self.rect_end is not None:
             return cv2.rectangle(
                 frame,
@@ -192,13 +234,30 @@ class VideoView(ImageView):
             )
 
     def save_screenshot(self, frame):
+        """
+        Saves a screenshot.
+
+        Args:
+            frame: Frame to be saved as screenshot.
+        """
+
         if os.path.exists(self.rec_path):
             dt = datetime.now().strftime("%d%m%Y_%Hh%Mm%Ss")
             im = Image.fromarray(frame)
             im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
         self.make_screen_shot = False
 
+
 def recalculate_coord(coord, best_size, img_size):
+    """
+    Recalculates coordinates, taken from GUI panel into true coordinates of the frame.
+
+    Args:
+        coord: Original coordinates to be recalculated.
+        best_size: Best size parameters.
+        img_size: Image size parameters.
+    """
+
     (circ_x, circ_y) = coord
     (i_w, i_h, x_of, y_of) = best_size
     (real_x, real_y) = img_size
@@ -210,6 +269,14 @@ def recalculate_coord(coord, best_size, img_size):
 
 
 def detect_ellipses(img, length=100):
+    """
+    Detects ellipses in an image.
+
+    Args:
+        img: Image to be processed.
+        length: Length parameter for ellipse detection. Defaults to 100.
+    """
+
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     thresh = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)[1]
 
