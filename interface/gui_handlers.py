@@ -2,6 +2,9 @@ import wx
 import cv2
 import os
 from interface.interface import Main_Frame
+from interface.video_view import Frame_Processor, detect_ellipses
+from datetime import datetime
+import csv
 
 from cameras.camera_av import *
 import platform
@@ -90,41 +93,44 @@ class Frame_Handlers(Main_Frame):
         # Initial setup for the camera connection status and number of detected beams
         # in the status bar
         self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(0), 4)
-        self.statusbar.SetStatusText("Con. status: Connected", 5)
+        # self.statusbar.SetStatusText("Con. status: Connected", 5)
 
         # Binds events invoked video panel to status bar updates, such as
         # mouse position, fps and max intensity
         self.panel_cam_img.Connect(-1, -1, EVT_MOUSE_XY, self.on_update_mouse_xy)
-        self.panel_cam_img.Connect(
+        self.Connect(
             -1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity
         )
         self.panel_cam_img.Connect(-1, -1, EVT_PASS_FPS, self.on_update_fps)
 
         # Binds event invoked by the detection of the beam centers
-        self.panel_cam_img.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
+        self.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
 
         # Declares intial absence of acquisition and tracking
         self.panel_cam_img.meas_on = False
         self.panel_cam_img.run_meas = False
+        self.track_path = os.path.dirname(os.path.realpath(__file__))
 
     def on_centers_update(self, event):
         """
-        Updates positions of the detected beams based on the event data.
+        Updates positions of the detected beams.
 
         Args:
             event: The wxPython event containing center data.
         """
         centers = event.centers
+        # print("Centers: ", centers)
         self.info_monitor.Clear()
         self.info_monitor.WriteText("Beams centers detected:" + "\n")
         for idx, each in enumerate(centers):
             self.info_monitor.AppendText(
                 "{}. x: {}, y: {} \n".format(idx + 1, each[0], each[1])
             )
+        self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(len(centers)), 4)
 
     def on_rec_start_stop(self, event):
         """
-        Handles start and stop of the recording (frame sequence) based on the event data.
+        Handles start and stop of the recording (frame sequence).
 
         Args:
             event: The wxPython event containing start/stop data.
@@ -138,7 +144,7 @@ class Frame_Handlers(Main_Frame):
 
     def on_rec_timer(self, event):
         """
-        Handles recording time updates based on the event data.
+        Handles recording time updates.
 
         Args:
             event: The wxPython event containing time update data.
@@ -150,11 +156,11 @@ class Frame_Handlers(Main_Frame):
             )
             wx.PostEvent(self, evt)
         if event.Id == self.track_timer.Id:
-            self.track_wr_point()
+            self.update_tracking_data()
 
     def on_video_rate(self, event):
         """
-        Updates the video rate based on the event data.
+        Updates the video rate.
 
         Args:
             event: The wxPython event containing video rate data.
@@ -163,7 +169,7 @@ class Frame_Handlers(Main_Frame):
 
     def on_update_mouse_xy(self, event):
         """
-        Updates mouse position is status bar based on the event data.
+        Updates mouse position at the status bar.
 
         Args:
             event: The wxPython event containing mouse position data.
@@ -175,7 +181,7 @@ class Frame_Handlers(Main_Frame):
 
     def on_rec_dir(self, event):
         """
-        Sets the recording directory based on the event data.
+        Sets the recording directory.
 
         Args:
             event: The wxPython event containing directory data.
@@ -187,7 +193,7 @@ class Frame_Handlers(Main_Frame):
 
     def on_track_saving_dir(self, event):
         """
-        Sets the directory for saving tracking data based on the event data.
+        Sets the directory for saving tracking data.
 
         Args:
             event: The wxPython event containing directory data.
@@ -195,11 +201,11 @@ class Frame_Handlers(Main_Frame):
 
         path = event.GetPath()
         if os.path.exists(path):
-            self.panel_cam_img.track_path = path
+            self.track_path = path
 
     def on_screenshot(self, event):
         """
-        Handles screenshot requests based on the event data.
+        Handles screenshot requests.
 
         Args:
             event: The wxPython event containing screenshot request data.
@@ -210,20 +216,23 @@ class Frame_Handlers(Main_Frame):
 
     def on_acq_start(self, event):
         """
-        Handles acquisition start requests based on the event data.
+        Handles acquisition start requests.
 
         Args:
             event: The wxPython event containing start request data.
         """
 
         print("Backend: ", self.backend)
-        self.camera = Camera_ABC(self.backend, event_catcher=self)
+        self.frame_queue = queue.Queue()
+        self.camera = Camera_ABC(self.backend, event_catcher=self, frame_queue=self.frame_queue)
+        self.processor = Frame_Processor(frame_queue=self.frame_queue, event_catcher=self)
         if self.camera is not None:
             self.camera.start()
+            self.processor.start()
 
     def on_acq_stop(self, event):
         """
-        Handles acquisition stop requests based on the event data.
+        Handles acquisition stop requests.
 
         Args:
             event: The wxPython event containing stop request data.
@@ -231,12 +240,13 @@ class Frame_Handlers(Main_Frame):
 
         if self.camera is not None:
             self.camera.stop()
+            self.processor.stop()
             self.camera = None
         self.panel_cam_img.stop()
 
     def on_line_len_text(self, event):
         """
-        Updates cross (ellipse center marker) line length based on the event data.
+        Updates cross (ellipse center marker) line length.
 
         Args:
             event: The wxPython event containing line length data.
@@ -252,8 +262,26 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing tracking settings data.
         """
 
-        self.panel_cam_img.tracking_arr = []
-        self.panel_cam_img.init_tracking = True
+        self.tracking_arr = []
+        if os.path.exists(self.track_path):
+            print("Tracking path is valid!")
+            dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
+            self.tracking_file = os.path.join(self.track_path, "{}.csv".format(dt))
+            self.update_tracking_data()
+
+    def update_tracking_data(self):
+        """
+        Updates tracking data and write to a csv file.
+
+        Args:
+            data: New tracking data to be appended.
+        """
+
+        self.tracking_arr.append(self.panel_cam_img.ellipses_centers)
+        with open(self.tracking_file, "a") as my_csv:
+            csvWriter = csv.writer(my_csv, delimiter=",")
+            csvWriter.writerows(self.panel_cam_img.ellipses_centers)
+            print("Point ", self.panel_cam_img.ellipses_centers, "saved!")
 
     def on_timebin_text(self, event):
         """
@@ -273,7 +301,7 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing start/stop data.
         """
 
-        if self.panel_cam_img.tracking_arr == []:
+        if self.tracking_arr == []:
             wx.MessageBox(
                 "Please fix tracking start point first!",
                 "INFO",
@@ -284,13 +312,6 @@ class Frame_Handlers(Main_Frame):
             self.track_timer.Start(self.tracking_time)
         else:
             self.track_timer.Stop()
-
-    def track_wr_point(self):
-        """
-        Writes the tracking point.
-        """
-
-        self.panel_cam_img.collect_centers = True
 
     def on_exp_enter(self, event):
         """
@@ -380,12 +401,12 @@ class Frame_Handlers(Main_Frame):
         Args:
             event: The wxPython event containing intensity data.
         """
-
+        # print("Intensity: ", event.intensity)
         self.statusbar.SetStatusText("Max. intensity: {}".format(event.intensity), 5)
 
     def on_close(self, event):
         """
-        Handles the closing of the application based on the event data.
+        Handles the closing of the application.
 
         Args:
             event: The wxPython event containing close request data.

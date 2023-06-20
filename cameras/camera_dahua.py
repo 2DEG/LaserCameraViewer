@@ -15,12 +15,13 @@ g_cameraStatusUserInfo = b"statusInfo"
 
 # DahuaCamera class inheriting from Camera_ABC
 class DahuaCamera(Camera_ABC, threading.Thread):
-    def __init__(self, *args, event_catcher=None, **kwargs):
+    def __init__(self, *args, event_catcher=None, frame_queue = None, **kwargs):
         super().__init__()
         self.camera = None
         self.streamSource = None
         self.g_isStop = False
         self.event_catcher = event_catcher
+        self.frame_queue = frame_queue
         self.gain_lock = threading.Lock()
         self.exposure_lock = threading.Lock()
 
@@ -295,9 +296,8 @@ class DahuaCamera(Camera_ABC, threading.Thread):
             cvImage = numpy.array(colorByteArray).reshape(
                 imageParams.height, imageParams.width, 1
             )
-            # cvImage = cv2.cvtColor(cvImage, cv2.COLOR_RGB2GRAY)
 
-        wx.PostEvent(self.event_catcher, CAMImage(cvImage))
+        self.frame_queue.put(cvImage)
         gc.collect()
 
     def get_init_setup(self):
