@@ -93,18 +93,18 @@ class Frame_Handlers(Main_Frame):
         # Initial setup for the camera connection status and number of detected beams
         # in the status bar
         self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(0), 4)
-        self.statusbar.SetStatusText("Con. status: Connected", 5)
+        # self.statusbar.SetStatusText("Con. status: Connected", 5)
 
         # Binds events invoked video panel to status bar updates, such as
         # mouse position, fps and max intensity
         self.panel_cam_img.Connect(-1, -1, EVT_MOUSE_XY, self.on_update_mouse_xy)
-        self.panel_cam_img.Connect(
+        self.Connect(
             -1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity
         )
         self.panel_cam_img.Connect(-1, -1, EVT_PASS_FPS, self.on_update_fps)
 
         # Binds event invoked by the detection of the beam centers
-        self.panel_cam_img.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
+        self.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
 
         # Declares intial absence of acquisition and tracking
         self.panel_cam_img.meas_on = False
@@ -119,12 +119,14 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing center data.
         """
         centers = event.centers
+        # print("Centers: ", centers)
         self.info_monitor.Clear()
         self.info_monitor.WriteText("Beams centers detected:" + "\n")
         for idx, each in enumerate(centers):
             self.info_monitor.AppendText(
                 "{}. x: {}, y: {} \n".format(idx + 1, each[0], each[1])
             )
+        self.statusbar.SetStatusText("Num. of detected beams: {:d}".format(len(centers)), 4)
 
     def on_rec_start_stop(self, event):
         """
@@ -399,7 +401,7 @@ class Frame_Handlers(Main_Frame):
         Args:
             event: The wxPython event containing intensity data.
         """
-
+        # print("Intensity: ", event.intensity)
         self.statusbar.SetStatusText("Max. intensity: {}".format(event.intensity), 5)
 
     def on_close(self, event):

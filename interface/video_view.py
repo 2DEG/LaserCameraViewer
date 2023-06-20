@@ -40,9 +40,9 @@ class Frame_Processor(threading.Thread):
                 continue
             else:
                 if frame is not None:
+                    # print("Frame max:", frame.max())
                     wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
                     frame, ellipse_centers = detect_ellipses(frame)
-                    ellipse_centers = []
                     if len(ellipse_centers) != 0:
                         wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
                 
@@ -296,6 +296,6 @@ def detect_ellipses(gray, length=100):
             cv2.line(img, (a - delta, b), (a + delta, b), (255, 0, 0), 1)
             cv2.line(img, (a, b - delta), (a, b + delta), (255, 0, 0), 1)
             cv2.ellipse(img, ellipse, (0, 255, 0), 2)
-            k += 1
+        k += 1
 
     return img, centers
