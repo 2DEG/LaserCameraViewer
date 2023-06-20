@@ -10,7 +10,7 @@ class Camera_ABC(ABC):
     def __init__(self, *args, **kwargs):
         super().__init__()
 
-    def __new__(cls, backend, event_catcher=None):
+    def __new__(cls, backend, event_catcher=None, frame_queue=None):
         subclasses = inheritors(cls)
         if not backend in subclasses.keys():
             raise ValueError("Invalid backend '{}'".format(backend))

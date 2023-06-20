@@ -9,14 +9,45 @@ from datetime import datetime
 
 from vmbpy import *
 
+import threading
+import queue
 
 from interface.image_view import ImageView
 from events.events import (
     UpdateIntensity,
     OnBeamCenters,
     MouseXY,
+    CAMImage,
 )
 
+class Frame_Processor(threading.Thread):
+    def __init__(self, frame_queue, event_catcher=None):
+            threading.Thread.__init__(self)
+            self.killswitch = threading.Event()
+            self.event_catcher = event_catcher
+            self.frame_queue = frame_queue
+    
+    def stop(self):
+            if self.isAlive():
+                self.killswitch.set()
+                self.join()
+
+    def run(self):
+        while not self.killswitch.is_set():
+            try:
+                frame = self.frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            else:
+                if frame is not None:
+                    wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
+                    frame, ellipse_centers = detect_ellipses(frame)
+                    ellipse_centers = []
+                    if len(ellipse_centers) != 0:
+                        wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
+                
+                    wx.PostEvent(self.event_catcher, CAMImage(frame, ellipse_centers))
+        print("Frame processing ended")
 
 class VideoView(ImageView):
     """
@@ -40,15 +71,11 @@ class VideoView(ImageView):
         self.zoom_pipeline = []
         self.rect_start = None
 
-        self.collect_centers = False
-        self.init_tracking = False
-        self.tracking_arr = []
-
         self.cross_line_len = 100
 
         self.make_screen_shot = False
         self.rec_path = os.path.dirname(os.path.realpath(__file__))
-        self.track_path = os.path.dirname(os.path.realpath(__file__))
+        
 
         # Bind mouse events
         self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
@@ -141,36 +168,12 @@ class VideoView(ImageView):
         """
 
         frame = event.img
-        # print("Frame: ", frame)
+        self.ellipses_centers = event.beam_centers
 
         if frame is not None:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-            wx.PostEvent(self, UpdateIntensity(frame.max()))
 
             if self.make_screen_shot:
                 self.save_screenshot(frame)
-
-            frame, ellipse_centers = detect_ellipses(frame, self.cross_line_len)
-            # frame, ellipse_centers = frame, []
-
-            if len(ellipse_centers) != 0:
-                wx.PostEvent(self, OnBeamCenters(ellipse_centers))
-
-            if self.init_tracking:
-                if os.path.exists(self.track_path):
-                    print("Tracking path is valid!")
-                    dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
-                    self.tracking_file = os.path.join(
-                        self.track_path, "{}.csv".format(dt)
-                    )
-
-                    self.update_tracking_data(ellipse_centers)
-                self.init_tracking = False
-
-            if self.collect_centers:
-                self.update_tracking_data(ellipse_centers)
-                self.collect_centers = False
-                # self.init_tracking = False
 
             if self.zoom_pipeline != []:
                 # if self.rect_start is not None and self.rect_end is not None:
@@ -180,7 +183,6 @@ class VideoView(ImageView):
                         min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]),
                         min(each[0][0], each[1][0]) : max(each[0][0], each[1][0]),
                     ]
-                    # print(frame.shape)
 
             if self.draw_rect:
                 # print("HI!")
@@ -202,19 +204,6 @@ class VideoView(ImageView):
 
         self.hide = True
         self.set_default_image()
-
-    def update_tracking_data(self, data):
-        """
-        Updates tracking data and write to a csv file.
-
-        Args:
-            data: New tracking data to be appended.
-        """
-
-        self.tracking_arr.append(data)
-        with open(self.tracking_file, "a") as my_csv:
-            csvWriter = csv.writer(my_csv, delimiter=",")
-            csvWriter.writerows(data)
 
     def draw_rectangle(self, frame):
         """
@@ -247,7 +236,6 @@ class VideoView(ImageView):
             im.save(os.path.join(self.rec_path, "{}.png".format(dt)))
         self.make_screen_shot = False
 
-
 def recalculate_coord(coord, best_size, img_size):
     """
     Recalculates coordinates, taken from GUI panel into true coordinates of the frame.
@@ -268,7 +256,7 @@ def recalculate_coord(coord, best_size, img_size):
     return int(circ_x * real_x / i_w), int(circ_y * real_y / i_h)
 
 
-def detect_ellipses(img, length=100):
+def detect_ellipses(gray, length=100):
     """
     Detects ellipses in an image.
 
@@ -277,7 +265,7 @@ def detect_ellipses(img, length=100):
         length: Length parameter for ellipse detection. Defaults to 100.
     """
 
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
     thresh = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)[1]
 
     # Dilate with elliptical shaped kernel

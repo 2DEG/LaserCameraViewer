@@ -8,11 +8,11 @@ from vmbpy import *
 # All frames will either be recorded in this format, or transformed to it before being displayed
 opencv_display_format = PixelFormat.Mono8
 
-# FRAME_HEIGHT = 1544 
-# FRAME_WIDTH = 2064
+FRAME_HEIGHT = 1544 
+FRAME_WIDTH = 2064
 
-FRAME_HEIGHT = 1080 
-FRAME_WIDTH = 1080
+# FRAME_HEIGHT = 1080 
+# FRAME_WIDTH = 1080
 
 
 def print_all_features(module: FeatureContainer):
@@ -92,12 +92,13 @@ def set_nearest_value(cam: Camera, feat_name: str, feat_value: int):
 class Camera_AV(Camera_ABC, threading.Thread):
     """Class for Allied Vision cameras"""
 
-    def __init__(self, *args, event_catcher=None, **kw):
+    def __init__(self, *args, event_catcher=None, frame_queue=None, **kw):
         print("Here!")
         threading.Thread.__init__(self)
         self.command_queue = queue.Queue()
         self.producer = None
         self.event_catcher = event_catcher
+        self.frame_queue = frame_queue
 
         try:
             with VmbSystem.get_instance() as vmb:
@@ -134,11 +135,12 @@ class Camera_AV(Camera_ABC, threading.Thread):
         return len(cam_list), cam_list
 
     class Producer(threading.Thread):
-        def __init__(self, command_queue, event_catcher=None):
+        def __init__(self, command_queue, event_catcher=None, frame_queue=None):
             threading.Thread.__init__(self)
             self.killswitch = threading.Event()
             self.event_catcher = event_catcher
             self.command_queue = command_queue
+            self.frame_queue = frame_queue
 
         def __call__(self, cam: Camera, stream: Stream, frame: Frame):
             # This method is executed within VmbC context. All incoming frames
@@ -149,7 +151,8 @@ class Camera_AV(Camera_ABC, threading.Thread):
                 img = frame.convert_pixel_format(
                     opencv_display_format
                 ).as_opencv_image()
-                wx.PostEvent(self.event_catcher, CAMImage(img))
+                self.frame_queue.put(img)
+                # wx.PostEvent(self.event_catcher, CAMImage(img))
             cam.queue_frame(frame)
 
         def stop(self):
@@ -205,7 +208,7 @@ class Camera_AV(Camera_ABC, threading.Thread):
         super().join(timeout)
 
     def run(self):
-        self.producer = self.Producer(self.command_queue, self.event_catcher)
+        self.producer = self.Producer(self.command_queue, self.event_catcher, self.frame_queue)
         self.producer.start()
 
     def get_cam_id(self):
