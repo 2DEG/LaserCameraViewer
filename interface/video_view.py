@@ -18,6 +18,7 @@ from events.events import (
     OnLensCalibration,
     UpdateIntensity,
     OnBeamCenters,
+    MouseXY,
 )
 
 
@@ -65,22 +66,24 @@ class VideoView(ImageView):
 
     def on_click(self, event):
         self.CaptureMouse()
-        x, y  = event.GetPosition()
         self.rect_start = recalculate_coord(
-            coord=[int(x), int(y)],
-            best_size=self.get_best_size(),
-            img_size=self.image.GetSize(),
+            coord=event.GetPosition(),
+            best_size=self.best_size,
+            img_size=self.image_size,
         )
 
     def on_mouse_move(self, event):
+        # x, y  = event.GetPosition()
+        x, y = recalculate_coord(
+                coord=event.GetPosition(),
+                best_size=self.best_size,
+                img_size=self.image_size,
+            )
         if event.Dragging() and event.LeftIsDown():
             self.draw_rect = True
-            x, y  = event.GetPosition()
-            self.rect_end = recalculate_coord(
-                coord=[int(x), int(y)],
-                best_size=self.get_best_size(),
-                img_size=self.image.GetSize(),
-            )
+            self.rect_end = [x, y]
+            # 
+        wx.PostEvent(self, MouseXY(x, y))
 
     def on_release(self, event):
         if self.HasCapture():

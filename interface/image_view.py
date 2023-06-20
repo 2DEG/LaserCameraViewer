@@ -29,6 +29,8 @@ class ImageView(wx.Panel):
 
         self.default_image = wx.Image(WIDTH, HEIGHT, clear=True)
         self.image = self.default_image
+        self.image_size = self.image.GetSize()
+        self.best_size = self.get_best_size()
         # self.bitmap = wx.BitmapFromImage(self.default_image)
         self.bitmap = wx.Bitmap(self.default_image)
 
@@ -74,6 +76,7 @@ class ImageView(wx.Panel):
             if self.hide:
                 self.hide = False
             self.image = image
+            self.image_size = self.image.GetSize()
             self.refresh_bitmap()
 
     def set_default_image(self):
@@ -95,7 +98,8 @@ class ImageView(wx.Panel):
             # self.set_image(wx.ConvertToGreyscale(width, height, frame))
 
     def refresh_bitmap(self):
-        (w, h, self.x_offset, self.y_offset) = self.get_best_size()
+        self.best_size = self.get_best_size()
+        (w, h, self.x_offset, self.y_offset) = self.best_size
         # print("Width and hight: {}, {}".format(w, h))
         if w > 0 and h > 0:
             # self.bitmap = wx.Bitmap(self.image.Scale(w, h, self.quality))
@@ -109,7 +113,7 @@ class ImageView(wx.Panel):
 
     def get_best_size(self):
         (wwidth, wheight) = self.GetSize()
-        (width, height) = self.image.GetSize()
+        (width, height) = self.image_size
 
         # print("Size: {}x{}".format(width, height))
         # nwidth = float(wheight * width) / height

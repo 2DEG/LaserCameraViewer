@@ -22,6 +22,7 @@ from events.events import (
     EVT_CAM_IMG,
     EVT_CAM_PARAM,
     EVT_CAM_INIT,
+    EVT_MOUSE_XY,
 )
 
 BACKENDS = ["Camera_AV", "DahuaCamera"]
@@ -41,6 +42,7 @@ class Frame_Handlers(Main_Frame):
         self.Bind(wx.EVT_CLOSE, self.on_close)
 
         self.camera = None
+        self.backend = None
         for each in BACKENDS:
             print(each)
             camera_test = Camera_ABC(each, event_catcher=self)
@@ -52,6 +54,15 @@ class Frame_Handlers(Main_Frame):
             print("Backend", each, "is available")
             self.backend = each
             break
+
+        if self.backend is None:
+            wx.MessageBox(
+                "Please connect the camera and restart the program!",
+                "ERROR",
+                wx.OK | wx.ICON_INFORMATION,
+            )
+            self.Destroy()
+            wx.Exit()
 
 
         self.Connect(-1, -1, EVT_CAM_IMG, self.panel_cam_img.player)
@@ -97,6 +108,7 @@ class Frame_Handlers(Main_Frame):
         self.statusbar.SetStatusText("Con. status: Connected", 5)
 
         # self.panel_cam_img.Connect(-1, -1, EVT_ON_CROP, self.on_crop)t
+        self.panel_cam_img.Connect(-1, -1, EVT_MOUSE_XY, self.on_update_mouse_xy)
         self.panel_cam_img.Connect(
             -1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity
         )
@@ -150,6 +162,11 @@ class Frame_Handlers(Main_Frame):
         self.recording_time = int(self.video_rate.GetValue())
         # self.tracking_time = int(event.GetPosition())
         # return
+
+    def on_update_mouse_xy(self, event):
+        self.statusbar.SetStatusText(
+            "Cursor coord.: ({:d}, {:d})".format(event.x, event.y), 0
+        )
 
     def on_rec_dir(self, event):
         path = event.GetPath()

@@ -25,6 +25,16 @@ EVT_CAM_INIT = wx.NewId()
 EVT_CAM_IMG = wx.NewId()
 EVT_CAM_PARAM = wx.NewId()
 
+## Update mouse XY
+EVT_MOUSE_XY = wx.NewId()
+
+class MouseXY(wx.PyEvent):
+    def __init__(self, x, y):
+        wx.PyEvent.__init__(self)
+        self.x = x
+        self.y = y
+        self.SetEventType(EVT_MOUSE_XY)
+
 
 class CAMInit(wx.PyEvent):
     def __init__(self, prop):
