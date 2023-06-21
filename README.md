@@ -49,9 +49,6 @@ To install Beam Alignment System, follow these steps:
     ```
 
 ## Running Beam Alignment System
+    python main.py
 
-    ```
-    python  main.py
-    ```
-    
 
