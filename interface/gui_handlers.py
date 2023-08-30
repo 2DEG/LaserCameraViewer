@@ -6,7 +6,6 @@ from interface.video_view import Frame_Processor, detect_ellipses
 from datetime import datetime
 import csv
 
-from cameras.camera_av import *
 import platform
 from events.events import (
     EVT_MAX_FRAME_INTEN,
@@ -24,12 +23,19 @@ BACKENDS = ["Camera_AV", "DahuaCamera"]
 
 # Platform check
 if platform.system() == "Windows":
-    from cameras.camera_dahua import *
-
+    try:
+        from cameras.camera_dahua import *
+    except:
+        BACKENDS.pop(BACKENDS.index("DahuaCamera"))
     PLATFORM = "Windows"
 elif platform.system() == "Linux":
     PLATFORM = "Linux"
     BACKENDS.pop(BACKENDS.index("DahuaCamera"))
+
+try:
+    from cameras.camera_av import *
+except:
+    BACKENDS.pop(BACKENDS.index("Camera_AV"))
 
 
 class Frame_Handlers(Main_Frame):
@@ -41,6 +47,16 @@ class Frame_Handlers(Main_Frame):
         # Camera scan and setup
         self.camera = None
         self.backend = None
+
+        if BACKENDS == []:
+            wx.MessageBox(
+                "Can not find cameras drivers. Please install drivers and restart the program.",
+                "ERROR",
+                wx.OK | wx.ICON_ERROR,
+            )
+            self.Destroy()
+            wx.Exit()
+
         for each in BACKENDS:
             print(each)
             camera_test = Camera_ABC(each, event_catcher=self)
@@ -55,9 +71,9 @@ class Frame_Handlers(Main_Frame):
 
         if self.backend is None:
             wx.MessageBox(
-                "Please connect the camera and restart the program!",
+                "Can not find any camera. Please check the connection and restart the program.",
                 "ERROR",
-                wx.OK | wx.ICON_INFORMATION,
+                wx.OK | wx.ICON_ERROR,
             )
             self.Destroy()
             wx.Exit()

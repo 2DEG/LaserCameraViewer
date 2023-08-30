@@ -8,18 +8,35 @@ Created on 2017-10-18
 from ctypes import *
 import os
 import platform
+import wx
 
 
 def enum(**enums):
     return type("Enum", (), enums)
 
+err = False
 if platform.architecture()[0] == "32bit":
-    path = os.path.join(os.environ['MV_GENICAM_32'].split("Runtime")[0], 'Development/Samples/Python/dll/x32/MVSDKmd.dll')
-    MVSDKdll = OleDLL(path)
+    try:
+        path = os.path.join(os.environ['MV_GENICAM_32'].split("Runtime")[0], 'Development/Samples/Python/dll/x32/MVSDKmd.dll')
+    except:
+        err = True
 else:
-    path = os.path.join(os.environ['MV_GENICAM_64'].split("Runtime")[0], 'Development/Samples/Python/dll/x64/MVSDKmd.dll')
-    MVSDKdll = OleDLL(path)
+    try:
+        path = os.path.join(os.environ['MV_GENICAM_64'].split("Runtime")[0], 'Development/Samples/Python/dll/x64/MVSDKmd.dll')
+    except:
+        err = True
 
+if err:
+    app = wx.App(False)
+    wx.MessageBox(
+                "System variables MV_GENICA_<> is not set! \nCan not find a path do Dahua SDK!",
+                "ERROR",
+                wx.OK | wx.ICON_ERROR,
+            )
+    app.MainLoop()
+
+MVSDKdll = OleDLL(path)
+# MVSDKdll = None
 # SDK.h => define 宏定义
 MAX_PARAM_CNT = 1000
 MAX_STRING_LENTH = 256
