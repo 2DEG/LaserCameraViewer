@@ -4,6 +4,10 @@
 Created on 2017-10-26
 
 @author: 
+
+This module isn't the authentic version!
+It came bundled with the Dahua SDK and is designed for image format conversion.
+Since I couldn't locate the original download link for this module, I've made it available on GitHub.
 """
 from ctypes import *
 import os

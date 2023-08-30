@@ -4,6 +4,10 @@
 Created on 2017-10-18
 
 @author: 
+
+This module isn't the original version!
+It was bundled with the Dahua SDK and is tailored for Dahua cameras.
+I haven't been able to locate the original download link for this module, so I've uploaded it to GitHub for convenience.
 """
 from ctypes import *
 import os
