@@ -13,5 +13,7 @@ platformdirs==3.5.3
 six==1.16.0
 tomli==2.0.1
 typing_extensions==4.6.3
-vmbpy == 0.0.1
 wxPython==4.2.1
+
+# VMBPY should be installed from the https://github.com/alliedvision/VmbPy/releases page
+https://github.com/alliedvision/VmbPy/releases/download/1.0.2/vmbpy-1.0.2-py3-none-any.whl
