@@ -4,6 +4,8 @@ import os
 from interface.interface import Main_Frame
 from interface.video_view import Frame_Processor, detect_ellipses
 from datetime import datetime
+import threading
+import itertools
 import csv
 
 import platform
@@ -18,7 +20,7 @@ from events.events import (
 )
 
 # List all implemented camera backends
-BACKENDS = ["Camera_AV", "DahuaCamera"]
+BACKENDS = ["Camera_AV", "DahuaCamera", "Camera_ADF"]
 
 
 # Platform check
@@ -36,6 +38,65 @@ try:
     from cameras.camera_av import *
 except:
     BACKENDS.pop(BACKENDS.index("Camera_AV"))
+
+try:
+    from cameras.camera_adf import *
+except:
+    BACKENDS.pop(BACKENDS.index("Camera_ADF"))
+
+def find_closest_centers(reference, array):
+    """
+    For each circle center in array1, find the closest circle center in array2.
+    Stores the result in the result_container at the given index.
+    :param array1: List of tuples representing the circle centers (x, y) in the first array
+    :param array2: List of tuples representing the circle centers (x, y) in the second array
+    :param result_container: List to store the result
+    :param index: Index in the result container where the result will be stored
+    """
+    closest_centers = []
+    indexes = ()
+    for idx, center1 in enumerate(reference):
+        # Calculate distances from the current center to all centers in the second array
+        distances = [np.linalg.norm(np.array(center1) - np.array(center2)) for center2 in array]
+        # Find the index of the closest center in array2
+        if len(distances) == 0:
+            continue
+        closest_index = np.argmin(distances)
+        if closest_index not in indexes:
+            indexes += (closest_index,)
+            closest_centers.append((idx, closest_index))
+        else:
+            for i, each in enumerate(closest_centers):
+                if each[1] == closest_index:
+                    dist = np.linalg.norm(np.array(reference[each[0]]) - np.array(array[each[1]]))
+                    if distances[closest_index] < dist:
+                        closest_centers.append((idx, closest_index))
+                        closest_centers[i] =(each[0], None)
+                    else:
+                        closest_centers.append((idx, None))
+    return closest_centers
+
+def write_tracking_data(time, tracking_file, tracking_arr, fixed_arr):
+    closest_centers = find_closest_centers(fixed_arr, tracking_arr)
+    wrt_arr = [time]
+    if len(closest_centers) == 0:
+        wrt_arr.append(None)
+        wrt_arr.append(None)
+    for each in closest_centers:
+        if each[1] is None:
+            wrt_arr.append(None)
+            wrt_arr.append(None)
+            continue
+        fixed_arr[each[0]] = tracking_arr[each[1]]
+        wrt_arr.append(tracking_arr[each[1]][0])
+        wrt_arr.append(tracking_arr[each[1]][1])
+
+    print("Write array: ", wrt_arr)
+
+    with open(tracking_file, "a") as my_csv:
+            csvWriter = csv.writer(my_csv, delimiter=",")
+            csvWriter.writerow(wrt_arr)
+            print("Point ", wrt_arr, "saved!")
 
 
 class Frame_Handlers(Main_Frame):
@@ -172,7 +233,8 @@ class Frame_Handlers(Main_Frame):
             )
             wx.PostEvent(self, evt)
         if event.Id == self.track_timer.Id:
-            self.update_tracking_data()
+            self.dt += self.tracking_time/1000
+            self.update_tracking_data(time = self.dt)
 
     def on_video_rate(self, event):
         """
@@ -279,13 +341,27 @@ class Frame_Handlers(Main_Frame):
         """
 
         self.tracking_arr = []
+        self.tracking_fixed_arr = []
+        self.dt = self.tracking_time/1000
         if os.path.exists(self.track_path):
             print("Tracking path is valid!")
             dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
             self.tracking_file = os.path.join(self.track_path, "{}.csv".format(dt))
+            self.tracking_fixed_arr = self.panel_cam_img.ellipses_centers
+
+            with open(self.tracking_file, "a") as my_csv:
+                csvWriter = csv.writer(my_csv, delimiter=",")
+                header = ['Time [s]']
+                for idx, each in enumerate(self.panel_cam_img.ellipses_centers):
+                    header.append('x{}'.format(idx))
+                    header.append('y{}'.format(idx)) 
+                    #
+                print("Header: ", header)
+                csvWriter.writerow(header)
+            
             self.update_tracking_data()
 
-    def update_tracking_data(self):
+    def update_tracking_data(self, time = 0.0):
         """
         Updates tracking data and write to a csv file.
 
@@ -293,11 +369,14 @@ class Frame_Handlers(Main_Frame):
             data: New tracking data to be appended.
         """
 
-        self.tracking_arr.append(self.panel_cam_img.ellipses_centers)
-        with open(self.tracking_file, "a") as my_csv:
-            csvWriter = csv.writer(my_csv, delimiter=",")
-            csvWriter.writerows(self.panel_cam_img.ellipses_centers)
-            print("Point ", self.panel_cam_img.ellipses_centers, "saved!")
+        self.tracking_arr = self.panel_cam_img.ellipses_centers
+        thread = threading.Thread(target=write_tracking_data, args=(time, self.tracking_file, self.tracking_arr, self.tracking_fixed_arr))
+        thread.start()
+
+        # with open(self.tracking_file, "a") as my_csv:
+        #     csvWriter = csv.writer(my_csv, delimiter=",")
+        #     csvWriter.writerows(self.panel_cam_img.ellipses_centers)
+        #     print("Point ", self.panel_cam_img.ellipses_centers, "saved!")
 
     def on_timebin_text(self, event):
         """
@@ -340,7 +419,11 @@ class Frame_Handlers(Main_Frame):
         new_exp_time = float(self.exp_text.GetValue())
         print("New exp_time:", new_exp_time)
         if self.camera:
-            self.camera.set_exposure(new_exp_time)
+            if self.backend == "Camera_ADF":
+                self.camera.set_exposure(int(new_exp_time))
+            else:
+                self.camera.set_exposure(new_exp_time)
+            
 
     def on_gain_enter(self, event):
         """
