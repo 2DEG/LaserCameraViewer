@@ -44,7 +44,7 @@ try:
 except:
     BACKENDS.pop(BACKENDS.index("Camera_ADF"))
 
-def find_closest_centers(reference, array):
+def find_closest_centers(reference = [], array = []):
     """
     For each circle center in array1, find the closest circle center in array2.
     Stores the result in the result_container at the given index.
@@ -55,41 +55,48 @@ def find_closest_centers(reference, array):
     """
     closest_centers = []
     indexes = ()
-    for idx, center1 in enumerate(reference):
-        # Calculate distances from the current center to all centers in the second array
-        distances = [np.linalg.norm(np.array(center1) - np.array(center2)) for center2 in array]
-        # Find the index of the closest center in array2
-        if len(distances) == 0:
-            continue
-        closest_index = np.argmin(distances)
-        if closest_index not in indexes:
-            indexes += (closest_index,)
+
+    if len(array) == 0:
+        if len(reference) != 0:
+            return [(idx, None) for idx in range(len(reference))]
+
+    if len(reference) <= len(array):
+        for idx, center1 in enumerate(reference):
+            # Calculate distances from the current center to all centers in the second array
+            distances = [np.linalg.norm(np.array(center1) - np.array(center2)) for center2 in array]
+            # Find the index of the closest center in array2
+            closest_index = np.argmin(distances)
             closest_centers.append((idx, closest_index))
-        else:
-            for i, each in enumerate(closest_centers):
-                if each[1] == closest_index:
-                    dist = np.linalg.norm(np.array(reference[each[0]]) - np.array(array[each[1]]))
-                    if distances[closest_index] < dist:
-                        closest_centers.append((idx, closest_index))
-                        closest_centers[i] =(each[0], None)
-                    else:
-                        closest_centers.append((idx, None))
+    else:
+         for idx, center1 in enumerate(array):
+            # Calculate distances from the current center to all centers in the second array
+            distances = [np.linalg.norm(np.array(center1) - np.array(center2)) for center2 in reference]
+            # Find the index of the closest center in array2
+            closest_index = np.argmin(distances)
+            closest_centers.append((closest_index, idx)) 
+
+    if len(closest_centers) < len(reference):
+        a = []
+        for each in closest_centers:
+            a.append(each[0])
+        for idx, _ in enumerate(reference):
+            if idx not in a:
+                closest_centers.append((idx, None))
+    
     return closest_centers
 
 def write_tracking_data(time, tracking_file, tracking_arr, fixed_arr):
     closest_centers = find_closest_centers(fixed_arr, tracking_arr)
     wrt_arr = [time]
-    if len(closest_centers) == 0:
-        wrt_arr.append(None)
-        wrt_arr.append(None)
+
     for each in closest_centers:
         if each[1] is None:
             wrt_arr.append(None)
             wrt_arr.append(None)
-            continue
-        fixed_arr[each[0]] = tracking_arr[each[1]]
-        wrt_arr.append(tracking_arr[each[1]][0])
-        wrt_arr.append(tracking_arr[each[1]][1])
+        else:
+            fixed_arr[each[0]] = tracking_arr[each[1]]
+            wrt_arr.append(tracking_arr[each[1]][0])
+            wrt_arr.append(tracking_arr[each[1]][1])
 
     print("Write array: ", wrt_arr)
 
