@@ -21,9 +21,10 @@ from events.events import (
 )
 
 class Frame_Processor(threading.Thread):
-    def __init__(self, frame_queue, event_catcher=None):
+    def __init__(self, frame_queue, event_catcher=None, cross_line_len=100):
             threading.Thread.__init__(self)
             self.killswitch = threading.Event()
+            self.cross_line_len = cross_line_len
             self.event_catcher = event_catcher
             self.frame_queue = frame_queue
     
@@ -42,7 +43,7 @@ class Frame_Processor(threading.Thread):
                 if frame is not None:
                     # print("Frame max:", frame.max())
                     wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
-                    frame, ellipse_centers = detect_ellipses(frame)
+                    frame, ellipse_centers = detect_ellipses(frame, length=self.cross_line_len)
                     if len(ellipse_centers) != 0:
                         wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
                 

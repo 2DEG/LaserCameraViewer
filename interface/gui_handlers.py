@@ -310,7 +310,7 @@ class Frame_Handlers(Main_Frame):
         print("Backend: ", self.backend)
         self.frame_queue = queue.Queue()
         self.camera = Camera_ABC(self.backend, event_catcher=self, frame_queue=self.frame_queue)
-        self.processor = Frame_Processor(frame_queue=self.frame_queue, event_catcher=self)
+        self.processor = Frame_Processor(frame_queue=self.frame_queue, event_catcher=self, cross_line_len=self.panel_cam_img.cross_line_len)
         if self.camera is not None:
             self.camera.start()
             self.processor.start()
