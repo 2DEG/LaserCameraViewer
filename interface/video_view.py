@@ -21,11 +21,13 @@ from events.events import (
 )
 
 class Frame_Processor(threading.Thread):
-    def __init__(self, frame_queue, event_catcher=None, cross_line_len=100):
+    def __init__(self, frame_queue, command_queue, event_catcher=None, cross_line_len=100, detect_ellipses=True):
             threading.Thread.__init__(self)
             self.killswitch = threading.Event()
             self.cross_line_len = cross_line_len
+            self.detect_ellipses = True
             self.event_catcher = event_catcher
+            self.command_queue = command_queue
             self.frame_queue = frame_queue
     
     def stop(self):
@@ -38,16 +40,45 @@ class Frame_Processor(threading.Thread):
             try:
                 frame = self.frame_queue.get(timeout=0.1)
             except queue.Empty:
+                frame = None
                 continue
             else:
                 if frame is not None:
                     # print("Frame max:", frame.max())
-                    wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
-                    frame, ellipse_centers = detect_ellipses(frame, length=self.cross_line_len)
-                    if len(ellipse_centers) != 0:
-                        wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
+                    # wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
+                    if self.detect_ellipses:
+                        frame, ellipse_centers = detect_ellipses(frame, length=self.cross_line_len)
+                        if len(ellipse_centers) != 0:
+                            wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
                 
-                    wx.PostEvent(self.event_catcher, CAMImage(frame, ellipse_centers))
+                        wx.PostEvent(self.event_catcher, CAMImage(frame, ellipse_centers))
+                    else:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+                        wx.PostEvent(self.event_catcher, CAMImage(frame, None))
+                    frame = None
+            try:
+                command = self.command_queue.get_nowait()
+            except queue.Empty:
+                command = None
+                continue
+            else:
+                if command is not None:
+                    for each in command.keys():
+                        if each == "cross_line_len":
+                            self.cross_line_len = command[each]
+                            break
+                        elif each == "detect_ellipses":
+                            self.detect_ellipses = command[each]
+                            break
+                    # elif each == "start":
+                    #     self.killswitch.clear()
+                    #     break
+                    # elif each == "save":
+                    #     self.save_csv(command[each])
+                    #     break
+                        else:
+                            pass 
+                command = None
         print("Frame processing ended")
 
 class VideoView(ImageView):
@@ -93,11 +124,12 @@ class VideoView(ImageView):
         """
 
         self.CaptureMouse()
-        self.rect_start = recalculate_coord(
+        x, y = recalculate_coord(
             coord=event.GetPosition(),
             best_size=self.best_size,
             img_size=self.image_size,
         )
+        self.rect_start = [x, y]
 
     def on_mouse_move(self, event):
         """
@@ -115,9 +147,11 @@ class VideoView(ImageView):
         )
         if event.Dragging() and event.LeftIsDown():
             self.draw_rect = True
+            # self.rect_end = [x if x > 0 else 0, y if y > 0 else 0]
             self.rect_end = [x, y]
             #
-        wx.PostEvent(self, MouseXY(x, y))
+        xx, yy = zoom_in_coord(coord=event.GetPosition(), best_size=self.best_size, img_size=self.image_size, zoom_pipeline=self.zoom_pipeline)
+        wx.PostEvent(self, MouseXY(xx, yy))
 
     def on_release(self, event):
         """
@@ -184,6 +218,8 @@ class VideoView(ImageView):
                         min(each[0][1], each[1][1]) : max(each[0][1], each[1][1]),
                         min(each[0][0], each[1][0]) : max(each[0][0], each[1][0]),
                     ]
+
+            wx.PostEvent(self, UpdateIntensity(frame.max()))       
 
             if self.draw_rect:
                 # print("HI!")
@@ -254,7 +290,37 @@ def recalculate_coord(coord, best_size, img_size):
         circ_y = circ_y - y_of
     if y_of == 0:
         circ_x = circ_x - x_of
-    return int(circ_x * real_x / i_w), int(circ_y * real_y / i_h)
+    x = int(circ_x * real_x / i_w)
+    y = int(circ_y * real_y / i_h)
+    return x if x > 0 else 0, y if y > 0 else 0
+
+def zoom_in_coord(coord, best_size, img_size, zoom_pipeline):
+    """
+    Recalculates coordinates, taken from GUI panel into true coordinates of the frame.
+
+    Args:
+        coord: Original coordinates to be recalculated.
+        best_size: Best size parameters.
+        img_size: Image size parameters.
+        zoom_pipeline: Pipeline of zooms.
+    """
+        
+    (circ_x, circ_y) = coord
+    (i_w, i_h, x_of, y_of) = best_size
+    (real_x, real_y) = img_size
+    if x_of == 0:
+        circ_y = circ_y - y_of
+    if y_of == 0:
+        circ_x = circ_x - x_of
+    x = int(circ_x * real_x / i_w)
+    y = int(circ_y * real_y / i_w)
+    
+    if zoom_pipeline != []:
+        for each in zoom_pipeline:
+            x = x + each[0][0]
+            y = y + each[0][1] 
+
+    return x, y
 
 
 def detect_ellipses(gray, length=100):

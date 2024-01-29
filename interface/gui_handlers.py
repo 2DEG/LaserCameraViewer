@@ -115,6 +115,7 @@ class Frame_Handlers(Main_Frame):
         # Camera scan and setup
         self.camera = None
         self.backend = None
+        self.processor = None
 
         if BACKENDS == []:
             wx.MessageBox(
@@ -182,7 +183,7 @@ class Frame_Handlers(Main_Frame):
         # Binds events invoked video panel to status bar updates, such as
         # mouse position, fps and max intensity
         self.panel_cam_img.Connect(-1, -1, EVT_MOUSE_XY, self.on_update_mouse_xy)
-        self.Connect(
+        self.panel_cam_img.Connect(
             -1, -1, EVT_MAX_FRAME_INTEN, self.on_update_intensity
         )
         self.panel_cam_img.Connect(-1, -1, EVT_PASS_FPS, self.on_update_fps)
@@ -309,8 +310,9 @@ class Frame_Handlers(Main_Frame):
 
         print("Backend: ", self.backend)
         self.frame_queue = queue.Queue()
+        self.command_queue = queue.Queue()
         self.camera = Camera_ABC(self.backend, event_catcher=self, frame_queue=self.frame_queue)
-        self.processor = Frame_Processor(frame_queue=self.frame_queue, event_catcher=self, cross_line_len=self.panel_cam_img.cross_line_len)
+        self.processor = Frame_Processor(frame_queue=self.frame_queue,command_queue=self.command_queue, event_catcher=self, cross_line_len=int(self.line_len.GetValue()), detect_ellipses=self.show_ellps_chk.GetValue())
         if self.camera is not None:
             self.camera.start()
             self.processor.start()
@@ -327,7 +329,12 @@ class Frame_Handlers(Main_Frame):
             self.camera.stop()
             self.processor.stop()
             self.camera = None
+            self.processor = None
         self.panel_cam_img.stop()
+
+    def on_show_ellps_chk(self, event):
+        if self.processor:
+            self.command_queue.put({"detect_ellipses": self.show_ellps_chk.GetValue()})
 
     def on_line_len_text(self, event):
         """
@@ -337,7 +344,9 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing line length data.
         """
 
-        self.panel_cam_img.cross_line_len = int(event.GetValue())
+        cross_line_len = int(self.line_len.GetValue())
+        if self.processor:
+            self.command_queue.put({"cross_line_len": cross_line_len})
 
     def on_tracking_appl(self, event):
         """

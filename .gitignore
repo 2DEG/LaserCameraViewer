@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 *.ini
 *.csv
+ADF_SDK/adfcam.lib
+ADF_SDK/adfcam.dll
