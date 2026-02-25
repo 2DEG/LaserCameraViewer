@@ -1,14 +1,16 @@
 import wx
 import cv2
 import os
+import queue
+import logging
+import numpy as np
 from interface.interface import Main_Frame
-from interface.video_view import Frame_Processor, detect_ellipses
+from interface.video_view import Frame_Processor
 from datetime import datetime
 import threading
-import itertools
 import csv
-
 import platform
+
 from events.events import (
     EVT_MAX_FRAME_INTEN,
     EVT_PASS_FPS,
@@ -22,39 +24,39 @@ from events.events import (
 # List all implemented camera backends
 BACKENDS = ["Camera_AV", "DahuaCamera", "Camera_ADF"]
 
-
 # Platform check
 if platform.system() == "Windows":
     try:
         from cameras.camera_dahua import *
-    except:
+    except Exception:
         BACKENDS.pop(BACKENDS.index("DahuaCamera"))
-    PLATFORM = "Windows"
 elif platform.system() == "Linux":
-    PLATFORM = "Linux"
     BACKENDS.pop(BACKENDS.index("DahuaCamera"))
 
 try:
     from cameras.camera_av import *
-except:
+except Exception:
     BACKENDS.pop(BACKENDS.index("Camera_AV"))
 
 try:
     from cameras.camera_adf import *
-except:
+except Exception:
     BACKENDS.pop(BACKENDS.index("Camera_ADF"))
 
-def find_closest_centers(reference = [], array = []):
+# Define logger AFTER wildcard imports so it doesn't get overwritten
+logger = logging.getLogger(__name__)
+
+def find_closest_centers(reference=None, array=None):
     """
-    For each circle center in array1, find the closest circle center in array2.
-    Stores the result in the result_container at the given index.
-    :param array1: List of tuples representing the circle centers (x, y) in the first array
-    :param array2: List of tuples representing the circle centers (x, y) in the second array
-    :param result_container: List to store the result
-    :param index: Index in the result container where the result will be stored
+    For each circle center in reference, find the closest circle center in array.
+    :param reference: List of tuples representing the reference circle centers (x, y)
+    :param array: List of tuples representing the detected circle centers (x, y)
     """
+    if reference is None:
+        reference = []
+    if array is None:
+        array = []
     closest_centers = []
-    indexes = ()
 
     if len(array) == 0:
         if len(reference) != 0:
@@ -85,25 +87,12 @@ def find_closest_centers(reference = [], array = []):
     
     return closest_centers
 
-def write_tracking_data(time, tracking_file, tracking_arr, fixed_arr):
-    closest_centers = find_closest_centers(fixed_arr, tracking_arr)
-    wrt_arr = [time]
-
-    for each in closest_centers:
-        if each[1] is None:
-            wrt_arr.append(None)
-            wrt_arr.append(None)
-        else:
-            fixed_arr[each[0]] = tracking_arr[each[1]]
-            wrt_arr.append(tracking_arr[each[1]][0])
-            wrt_arr.append(tracking_arr[each[1]][1])
-
-    print("Write array: ", wrt_arr)
-
+def _write_csv_row(tracking_file, row):
+    """Write a single row to the tracking CSV file (runs in background thread)."""
     with open(tracking_file, "a") as my_csv:
-            csvWriter = csv.writer(my_csv, delimiter=",")
-            csvWriter.writerow(wrt_arr)
-            print("Point ", wrt_arr, "saved!")
+        csvWriter = csv.writer(my_csv, delimiter=",")
+        csvWriter.writerow(row)
+    logger.debug("Tracking point saved: %s", row)
 
 
 class Frame_Handlers(Main_Frame):
@@ -127,14 +116,18 @@ class Frame_Handlers(Main_Frame):
             wx.Exit()
 
         for each in BACKENDS:
-            print(each)
-            camera_test = Camera_ABC(each, event_catcher=self)
-            camera_cnt, camera_list = camera_test.enum_cameras()
-            print("Camera cnt: ", camera_cnt, "Camera list: ", camera_list)
+            logger.info("Probing backend: %s", each)
+            try:
+                camera_test = Camera_ABC(each, event_catcher=self)
+                camera_cnt, camera_list = camera_test.enum_cameras()
+            except Exception as e:
+                logger.warning("Backend %s failed: %s", each, e)
+                continue
+            logger.info("Backend %s: found %s camera(s): %s", each, camera_cnt, camera_list)
 
             if camera_cnt is None or camera_list == []:
                 continue
-            print("Backend", each, "is available")
+            logger.info("Using backend: %s", each)
             self.backend = each
             break
 
@@ -148,9 +141,10 @@ class Frame_Handlers(Main_Frame):
             wx.Exit()
 
         # Binds events invoked by the camera to the GUI functions
-        self.Connect(-1, -1, EVT_CAM_IMG, self.panel_cam_img.player)
+        self.Connect(-1, -1, EVT_CAM_IMG, self._on_cam_image)
         self.Connect(-1, -1, EVT_CAM_PARAM, self.on_param_change)
         self.Connect(-1, -1, EVT_CAM_INIT, self.on_camera_setup_update)
+        self._waiting_for_frame = False
 
         # Initialisation of recording directory
         self.rec_save_path = os.path.dirname(os.path.realpath(__file__))
@@ -191,10 +185,20 @@ class Frame_Handlers(Main_Frame):
         # Binds event invoked by the detection of the beam centers
         self.Connect(-1, -1, EVT_BEAM_CENTERS, self.on_centers_update)
 
-        # Declares intial absence of acquisition and tracking
+        # Declares initial absence of acquisition and tracking
         self.panel_cam_img.meas_on = False
         self.panel_cam_img.run_meas = False
         self.track_path = os.path.dirname(os.path.realpath(__file__))
+        self.tracking_arr = []
+        self.tracking_fixed_arr = []
+        self.tracking_file = None
+
+    def _on_cam_image(self, event):
+        """Wrapper for camera image events. Dismisses the start-up progress
+        dialog when the first frame arrives, then forwards to the player."""
+        if self._waiting_for_frame:
+            self._dismiss_busy_dialog()
+        self.panel_cam_img.player(event)
 
     def on_centers_update(self, event):
         """
@@ -220,7 +224,7 @@ class Frame_Handlers(Main_Frame):
         Args:
             event: The wxPython event containing start/stop data.
         """
-        print("Sequence Timer ID: ", self.rec_timer.Id)
+        logger.debug("Sequence Timer ID: %s", self.rec_timer.Id)
         if self.t_vid.IsToggled():
             # Start recording
             self.rec_timer.Start(self.recording_time)
@@ -235,7 +239,7 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing time update data.
         """
         if event.Id == self.rec_timer.Id:
-            print("Current Event ID: ", event.Id)
+            logger.debug("Recording timer tick (ID: %s)", event.Id)
             evt = wx.PyCommandEvent(
                 wx.wxEVT_COMMAND_TOOL_CLICKED, self.t_scr_sht.GetId()
             )
@@ -297,40 +301,113 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing screenshot request data.
         """
 
-        print("Screenshot buttom pressed!")
+        logger.info("Screenshot requested")
         self.panel_cam_img.make_screenshot(self.rec_save_path)
 
     def on_acq_start(self, event):
         """
-        Handles acquisition start requests.
+        Handles acquisition start requests. Shows a progress dialog until
+        the first frame arrives from the camera.
 
         Args:
             event: The wxPython event containing start request data.
         """
 
-        print("Backend: ", self.backend)
-        self.frame_queue = queue.Queue()
+        if self.camera is not None:
+            logger.warning("Acquisition already running, ignoring start request")
+            return
+
+        logger.info("Starting acquisition with backend: %s", self.backend)
+        self.frame_queue = queue.Queue(maxsize=2)
         self.command_queue = queue.Queue()
         self.camera = Camera_ABC(self.backend, event_catcher=self, frame_queue=self.frame_queue)
-        self.processor = Frame_Processor(frame_queue=self.frame_queue,command_queue=self.command_queue, event_catcher=self, cross_line_len=int(self.line_len.GetValue()), detect_ellipses=self.show_ellps_chk.GetValue())
+        self.processor = Frame_Processor(
+            frame_queue=self.frame_queue,
+            command_queue=self.command_queue,
+            event_catcher=self,
+            cross_line_len=int(self.line_len.GetValue()),
+            detect_ellipses=self.show_ellps_chk.GetValue(),
+            max_spots=self.max_spots.GetValue(),
+            min_area=self.min_area.GetValue(),
+            threshold=self.det_threshold.GetValue(),
+        )
         if self.camera is not None:
+            # Show progress dialog while waiting for the camera to start
+            self._busy_dlg = wx.ProgressDialog(
+                "Starting Camera",
+                "Connecting to camera and starting stream...",
+                maximum=100,
+                parent=self,
+                style=wx.PD_APP_MODAL | wx.PD_CAN_ABORT,
+            )
+            self._busy_timer = wx.Timer(self)
+            self._busy_timeout = 0
+            self.Bind(wx.EVT_TIMER, self._on_busy_pulse, self._busy_timer)
+            self._busy_timer.Start(100)
+            self._waiting_for_frame = True
+
             self.camera.start()
             self.processor.start()
 
+    def _on_busy_pulse(self, event):
+        """Pulses the progress dialog and checks for first frame or timeout."""
+        if event.GetTimer().GetId() != self._busy_timer.GetId():
+            # Pass through to other timer handlers (rec_timer, track_timer)
+            self.on_rec_timer(event)
+            return
+        self._busy_timeout += 100
+        if not self._waiting_for_frame or self._busy_timeout > 15000:
+            # First frame arrived or 15s timeout
+            self._dismiss_busy_dialog()
+            return
+        keep_going, _ = self._busy_dlg.Pulse()
+        if not keep_going:
+            # User pressed Cancel
+            self._dismiss_busy_dialog()
+            self.on_acq_stop(None)
+
+    def _dismiss_busy_dialog(self):
+        """Stops the busy timer and closes the progress dialog."""
+        if hasattr(self, '_busy_timer') and self._busy_timer.IsRunning():
+            self._busy_timer.Stop()
+        if hasattr(self, '_busy_dlg') and self._busy_dlg:
+            self._busy_dlg.Destroy()
+            self._busy_dlg = None
+        self._waiting_for_frame = False
+
     def on_acq_stop(self, event):
         """
-        Handles acquisition stop requests.
+        Handles acquisition stop requests. Shows a progress dialog while
+        the camera threads are shutting down.
 
         Args:
             event: The wxPython event containing stop request data.
         """
 
         if self.camera is not None:
-            self.camera.stop()
-            self.processor.stop()
-            self.camera = None
-            self.processor = None
-        self.panel_cam_img.stop()
+            dlg = wx.ProgressDialog(
+                "Stopping Camera",
+                "Stopping camera stream...",
+                maximum=100,
+                parent=self,
+                style=wx.PD_APP_MODAL,
+            )
+            dlg.Pulse()
+
+            def _stop_worker():
+                self.camera.stop()
+                self.processor.stop()
+                wx.CallAfter(_stop_done)
+
+            def _stop_done():
+                self.camera = None
+                self.processor = None
+                self.panel_cam_img.stop()
+                dlg.Destroy()
+
+            threading.Thread(target=_stop_worker, daemon=True).start()
+        else:
+            self.panel_cam_img.stop()
 
     def on_show_ellps_chk(self, event):
         if self.processor:
@@ -348,6 +425,19 @@ class Frame_Handlers(Main_Frame):
         if self.processor:
             self.command_queue.put({"cross_line_len": cross_line_len})
 
+    def on_detection_params(self, event):
+        """
+        Updates spot detection parameters (max spots, min area, threshold).
+
+        Args:
+            event: The wxPython event from any of the detection SpinCtrl widgets.
+        """
+
+        if self.processor:
+            self.command_queue.put({"max_spots": self.max_spots.GetValue()})
+            self.command_queue.put({"min_area": self.min_area.GetValue()})
+            self.command_queue.put({"threshold": self.det_threshold.GetValue()})
+
     def on_tracking_appl(self, event):
         """
         Initialize laser beams tracking settings.
@@ -360,7 +450,7 @@ class Frame_Handlers(Main_Frame):
         self.tracking_fixed_arr = []
         self.dt = self.tracking_time/1000
         if os.path.exists(self.track_path):
-            print("Tracking path is valid!")
+            logger.info("Tracking path valid: %s", self.track_path)
             dt = datetime.now().strftime("Track_%d%m%Y_%Hh%Mm%Ss")
             self.tracking_file = os.path.join(self.track_path, "{}.csv".format(dt))
             self.tracking_fixed_arr = self.panel_cam_img.ellipses_centers
@@ -372,27 +462,39 @@ class Frame_Handlers(Main_Frame):
                     header.append('x{}'.format(idx))
                     header.append('y{}'.format(idx)) 
                     #
-                print("Header: ", header)
+                logger.debug("Tracking header: %s", header)
                 csvWriter.writerow(header)
             
             self.update_tracking_data()
 
-    def update_tracking_data(self, time = 0.0):
+    def update_tracking_data(self, time=0.0):
         """
-        Updates tracking data and write to a csv file.
+        Updates tracking data and writes to a csv file.
 
         Args:
-            data: New tracking data to be appended.
+            time: Timestamp for the tracking data point.
         """
 
         self.tracking_arr = self.panel_cam_img.ellipses_centers
-        thread = threading.Thread(target=write_tracking_data, args=(time, self.tracking_file, self.tracking_arr, self.tracking_fixed_arr))
-        thread.start()
+        # Compute matching on the main thread (fast, avoids race condition)
+        closest_centers = find_closest_centers(self.tracking_fixed_arr, self.tracking_arr)
+        row = [time]
+        for each in closest_centers:
+            if each[1] is None:
+                row.append(None)
+                row.append(None)
+            else:
+                self.tracking_fixed_arr[each[0]] = self.tracking_arr[each[1]]
+                row.append(self.tracking_arr[each[1]][0])
+                row.append(self.tracking_arr[each[1]][1])
 
-        # with open(self.tracking_file, "a") as my_csv:
-        #     csvWriter = csv.writer(my_csv, delimiter=",")
-        #     csvWriter.writerows(self.panel_cam_img.ellipses_centers)
-        #     print("Point ", self.panel_cam_img.ellipses_centers, "saved!")
+        logger.debug("Write array: %s", row)
+        # Offload only the file I/O to a background thread
+        threading.Thread(
+            target=_write_csv_row,
+            args=(self.tracking_file, row),
+            daemon=True,
+        ).start()
 
     def on_timebin_text(self, event):
         """
@@ -424,33 +526,69 @@ class Frame_Handlers(Main_Frame):
         else:
             self.track_timer.Stop()
 
+    def on_exp_slider(self, event):
+        """
+        Updates the camera's exposure time from the slider.
+
+        Args:
+            event: The wxPython slider event.
+        """
+
+        new_exp_time = self.exp_slider.GetValue()
+        self.exp_text.SetValue(float(new_exp_time))
+        if self.camera:
+            if self.backend == "Camera_ADF":
+                self.camera.set_exposure(int(new_exp_time))
+            else:
+                self.camera.set_exposure(float(new_exp_time))
+
     def on_exp_enter(self, event):
         """
-        Updates the camera's exposure time.
+        Updates the camera's exposure time from the text input.
 
         Args:
             event: The wxPython event containing exposure time data.
         """
 
+        # Defer reading the value so the control commits the typed text first
+        wx.CallAfter(self._apply_exposure)
+
+    def _apply_exposure(self):
         new_exp_time = float(self.exp_text.GetValue())
-        print("New exp_time:", new_exp_time)
+        self.exp_slider.SetValue(int(new_exp_time))
         if self.camera:
             if self.backend == "Camera_ADF":
                 self.camera.set_exposure(int(new_exp_time))
             else:
                 self.camera.set_exposure(new_exp_time)
-            
+
+    def on_gain_slider(self, event):
+        """
+        Updates the camera's gain from the slider.
+
+        Args:
+            event: The wxPython slider event.
+        """
+
+        new_gain = self.gain_slider.GetValue()
+        self.gain_text.SetValue(float(new_gain))
+        if self.camera:
+            self.camera.set_gain(float(new_gain))
 
     def on_gain_enter(self, event):
         """
-        Updates the camera's gain.
+        Updates the camera's gain from the text input.
 
         Args:
             event: The wxPython event containing gain data.
         """
 
+        # Defer reading the value so the control commits the typed text first
+        wx.CallAfter(self._apply_gain)
+
+    def _apply_gain(self):
         new_gain = float(self.gain_text.GetValue())
-        print("New gain:", new_gain)
+        self.gain_slider.SetValue(int(new_gain))
         if self.camera:
             self.camera.set_gain(new_gain)
 
@@ -465,12 +603,12 @@ class Frame_Handlers(Main_Frame):
         param = event.param
         value = event.val
         if param == "Gain":
-            self.gain_text.SetValue(str(value))
-            self.gain_slider.SetValue(value)
+            self.gain_text.SetValue(float(value))
+            self.gain_slider.SetValue(int(value))
             self.statusbar.SetStatusText("Real gain: {:.2f}".format(value), 3)
         elif param == "ExposureTime":
-            self.exp_text.SetValue(str(value))
-            self.exp_slider.SetValue(value)
+            self.exp_text.SetValue(float(value))
+            self.exp_slider.SetValue(int(value))
             self.statusbar.SetStatusText("Real exp.: {:.2f}".format(value), 2)
 
     def on_camera_setup_update(self, event):
@@ -484,19 +622,19 @@ class Frame_Handlers(Main_Frame):
         self.exp_slider.SetRange(*(map(int, event.prop["exposure_range"])))
         self.exp_slider.SetValue(int(event.prop["exposure"]))
         self.exp_text.SetRange(*(map(int, event.prop["exposure_range"])))
-        self.exp_text.SetIncrement(int(event.prop["exposure_increment"]))
-        self.exp_text.SetValue(int(event.prop["exposure"]))
+        self.exp_text.SetIncrement(float(event.prop["exposure_increment"]))
+        self.exp_text.SetValue(float(event.prop["exposure"]))
         self.statusbar.SetStatusText(
-            "Real exp.: {:.2f}".format(int(event.prop["exposure"])), 2
+            "Real exp.: {:.2f}".format(event.prop["exposure"]), 2
         )
 
         self.gain_slider.SetRange(*(map(int, event.prop["gain_range"])))
         self.gain_slider.SetValue(int(event.prop["gain"]))
         self.gain_text.SetRange(*(map(int, event.prop["gain_range"])))
-        self.gain_text.SetIncrement(event.prop["gain_increment"])
-        self.gain_text.SetValue(int(event.prop["gain"]))
+        self.gain_text.SetIncrement(float(event.prop["gain_increment"]))
+        self.gain_text.SetValue(float(event.prop["gain"]))
         self.statusbar.SetStatusText(
-            "Real gain: {:.2f}".format(int(event.prop["gain"])), 3
+            "Real gain: {:.2f}".format(event.prop["gain"]), 3
         )
 
     def on_update_fps(self, event):
@@ -516,7 +654,6 @@ class Frame_Handlers(Main_Frame):
         Args:
             event: The wxPython event containing intensity data.
         """
-        # print("Intensity: ", event.intensity)
         self.statusbar.SetStatusText("Max. intensity: {}".format(event.intensity), 5)
 
     def on_close(self, event):
@@ -529,6 +666,8 @@ class Frame_Handlers(Main_Frame):
 
         if self.camera is not None:
             self.camera.stop()
+        if self.processor is not None:
+            self.processor.stop()
         self.panel_cam_img.stop()
         cv2.destroyAllWindows()
 

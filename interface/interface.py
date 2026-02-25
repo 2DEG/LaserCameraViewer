@@ -99,11 +99,10 @@ class Main_Frame ( wx.Frame ):
 		bSizer14 = wx.BoxSizer( wx.HORIZONTAL )
 
 		self.exp_slider = wx.Slider( self.n_settings, wx.ID_ANY, 500000, 1, 1000000, wx.DefaultPosition, wx.DefaultSize, wx.SL_HORIZONTAL|wx.SL_MIN_MAX_LABELS|wx.SL_VALUE_LABEL )
-		self.exp_slider.Enable( False )
 
 		bSizer14.Add( self.exp_slider, 1, wx.ALL|wx.ALIGN_BOTTOM, 5 )
 
-		self.exp_text = wx.SpinCtrlDouble( self.n_settings, wx.ID_ANY, u"500000", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS, 1, 1e+06, 499998.000000, 1 )
+		self.exp_text = wx.SpinCtrlDouble( self.n_settings, wx.ID_ANY, u"500000", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS|wx.TE_PROCESS_ENTER, 1, 1e+06, 499998.000000, 1 )
 		self.exp_text.SetDigits( 0 )
 		bSizer14.Add( self.exp_text, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
 
@@ -118,11 +117,10 @@ class Main_Frame ( wx.Frame ):
 		bSizer13 = wx.BoxSizer( wx.HORIZONTAL )
 
 		self.gain_slider = wx.Slider( self.n_settings, wx.ID_ANY, 16, 1, 32, wx.DefaultPosition, wx.DefaultSize, wx.SL_HORIZONTAL|wx.SL_MIN_MAX_LABELS|wx.SL_VALUE_LABEL )
-		self.gain_slider.Enable( False )
 
 		bSizer13.Add( self.gain_slider, 1, wx.ALL|wx.ALIGN_BOTTOM, 5 )
 
-		self.gain_text = wx.SpinCtrlDouble( self.n_settings, wx.ID_ANY, u"16", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS, 1, 32, 1.000000, 1 )
+		self.gain_text = wx.SpinCtrlDouble( self.n_settings, wx.ID_ANY, u"16", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS|wx.TE_PROCESS_ENTER, 1, 32, 1.000000, 1 )
 		self.gain_text.SetDigits( 0 )
 		bSizer13.Add( self.gain_text, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
 
@@ -239,6 +237,39 @@ class Main_Frame ( wx.Frame ):
 		self.show_ellps_chk.SetValue(True)
 		bSizer9.Add( self.show_ellps_chk, 0, wx.ALL, 5 )
 
+		bSizer_maxspots = wx.BoxSizer( wx.HORIZONTAL )
+
+		self.m_staticText_maxspots = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Max spots:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText_maxspots.Wrap( -1 )
+		bSizer_maxspots.Add( self.m_staticText_maxspots, 1, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		self.max_spots = wx.SpinCtrl( self.n_stab_track, wx.ID_ANY, u"10", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS, 1, 1000, 10 )
+		bSizer_maxspots.Add( self.max_spots, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		bSizer9.Add( bSizer_maxspots, 1, wx.EXPAND, 5 )
+
+		bSizer_minarea = wx.BoxSizer( wx.HORIZONTAL )
+
+		self.m_staticText_minarea = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Min area (px):", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText_minarea.Wrap( -1 )
+		bSizer_minarea.Add( self.m_staticText_minarea, 1, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		self.min_area = wx.SpinCtrl( self.n_stab_track, wx.ID_ANY, u"50", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS, 1, 100000, 50 )
+		bSizer_minarea.Add( self.min_area, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		bSizer9.Add( bSizer_minarea, 1, wx.EXPAND, 5 )
+
+		bSizer_thresh = wx.BoxSizer( wx.HORIZONTAL )
+
+		self.m_staticText_thresh = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Threshold:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText_thresh.Wrap( -1 )
+		bSizer_thresh.Add( self.m_staticText_thresh, 1, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		self.det_threshold = wx.SpinCtrl( self.n_stab_track, wx.ID_ANY, u"50", wx.DefaultPosition, wx.DefaultSize, wx.SP_ARROW_KEYS, 1, 255, 50 )
+		bSizer_thresh.Add( self.det_threshold, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
+
+		bSizer9.Add( bSizer_thresh, 1, wx.EXPAND, 5 )
+
 		self.m_staticText7 = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Save track to:", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_staticText7.Wrap( -1 )
 
@@ -345,8 +376,10 @@ class Main_Frame ( wx.Frame ):
 		self.panel_cam_img.Bind( wx.EVT_LEFT_DCLICK, self.on_mouse_click )
 		self.exp_slider.Bind( wx.EVT_SLIDER, self.on_exp_slider )
 		self.exp_text.Bind( wx.EVT_SPINCTRLDOUBLE, self.on_exp_enter )
+		self.exp_text.Bind( wx.EVT_TEXT_ENTER, self.on_exp_enter )
 		self.gain_slider.Bind( wx.EVT_SLIDER, self.on_gain_slider )
 		self.gain_text.Bind( wx.EVT_SPINCTRLDOUBLE, self.on_gain_enter )
+		self.gain_text.Bind( wx.EVT_TEXT_ENTER, self.on_gain_enter )
 		self.fps_text.Bind( wx.EVT_SPINCTRLDOUBLE, self.on_fps_enter )
 		self.fps_text.Bind( wx.EVT_TEXT, self.on_fps_enter )
 		self.fps_text.Bind( wx.EVT_TEXT_ENTER, self.on_fps_enter )
@@ -358,6 +391,9 @@ class Main_Frame ( wx.Frame ):
 		self.line_len.Bind( wx.EVT_SPINCTRLDOUBLE, self.on_line_len_text )
 		self.line_len.Bind( wx.EVT_TEXT_ENTER, self.on_line_len_text )
 		self.show_ellps_chk.Bind( wx.EVT_CHECKBOX, self.on_show_ellps_chk )
+		self.max_spots.Bind( wx.EVT_SPINCTRL, self.on_detection_params )
+		self.min_area.Bind( wx.EVT_SPINCTRL, self.on_detection_params )
+		self.det_threshold.Bind( wx.EVT_SPINCTRL, self.on_detection_params )
 		self.m_dirPicker21.Bind( wx.EVT_DIRPICKER_CHANGED, self.on_track_saving_dir )
 		self.m_checkBox2.Bind( wx.EVT_CHECKBOX, self.on_show_hide )
 		self.m_dirPicker2.Bind( wx.EVT_DIRPICKER_CHANGED, self.on_rec_dir )
@@ -427,6 +463,9 @@ class Main_Frame ( wx.Frame ):
 
 
 	def on_show_ellps_chk( self, event ):
+		event.Skip()
+
+	def on_detection_params( self, event ):
 		event.Skip()
 
 	def on_track_saving_dir( self, event ):

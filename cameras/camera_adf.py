@@ -13,7 +13,7 @@ import threading
 class Camera_ADF(Camera_ABC, threading.Thread):
 
 	def __init__(self, *args, event_catcher=None, frame_queue=None, **kw):
-		threading.Thread.__init__(self)
+		threading.Thread.__init__(self, daemon=True)
 		self.cur_cam = None
 		self.event_catcher = event_catcher
 		self.frame_queue = frame_queue
@@ -45,7 +45,7 @@ class Camera_ADF(Camera_ABC, threading.Thread):
 
 	def stop(self):
 		self.close_camera()
-		if self.isAlive():
+		if self.is_alive():
 			self.join()
 
 	def join(self, timeout=None):

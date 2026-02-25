@@ -1,8 +1,12 @@
 import wx
 import time
 import cv2
+import logging
+import numpy as np
 
 from events.events import PassFPS
+
+logger = logging.getLogger(__name__)
 
 WIDTH = 640
 HEIGHT = 480
@@ -99,7 +103,7 @@ class ImageView(wx.Panel):
                 wx.PostEvent(self, PassFPS(self.fps))
                 self.fps = 0
             self.set_image(
-                wx.ImageFromBuffer(width, height, cv2.resize(frame, (width, height)))
+                wx.ImageFromBuffer(width, height, np.ascontiguousarray(frame))
             )
 
     def refresh_bitmap(self):
@@ -109,8 +113,7 @@ class ImageView(wx.Panel):
             try:
                 self.bitmap = wx.Bitmap(self.image.Scale(w, h))
             except Exception as e:
-                print("invalid new image size")
-                print(e)
+                logger.warning("Invalid image size for Scale(%d, %d): %s", w, h, e)
                 self.bitmap = wx.Bitmap(self.default_image)
             self.Refresh()
 
@@ -118,7 +121,7 @@ class ImageView(wx.Panel):
         """Calculates the best size and position for displaying the current image.
 
         Returns:
-            tuple[float, float, float, float]: The best size and position.
+            tuple[int, int, int, int]: The best size and position.
         """
 
         (wwidth, wheight) = self.GetSize()
@@ -135,6 +138,6 @@ class ImageView(wx.Panel):
                 nheight = wheight
                 x_offset = (wwidth - nwidth) / 2.0
                 y_offset = 0
-            return (nwidth, nheight, x_offset, y_offset)
+            return (int(nwidth), int(nheight), int(x_offset), int(y_offset))
         else:
-            return (0.0, 0.0, 0.0, 0.0)
+            return (0, 0, 0, 0)
