@@ -199,6 +199,10 @@ class Frame_Handlers(Main_Frame):
         self.tracking_fixed_arr = []
         self.tracking_file = None
 
+        # Track overlay state
+        self.show_tracks = False
+        self.track_overlay_data = None
+
     def on_help_tracking(self, event):
         """Shows step-by-step instructions for using the tracking tool."""
         msg = (
@@ -321,6 +325,82 @@ class Frame_Handlers(Main_Frame):
         path = event.GetPath()
         if os.path.exists(path):
             self.track_path = path
+
+    def on_show_tracks_chk(self, event):
+        """
+        Toggles the track overlay display and enables/disables the track file picker.
+
+        Args:
+            event: The wxPython checkbox event.
+        """
+        self.show_tracks = self.show_tracks_chk.GetValue()
+        self.m_staticText_open_track.Enable(self.show_tracks)
+        self.m_filePicker_track.Enable(self.show_tracks)
+        if not self.show_tracks:
+            self.track_overlay_data = None
+            self.panel_cam_img.track_overlay = None
+
+    def on_track_file_picked(self, event):
+        """
+        Loads a track CSV file and sets the overlay data for drawing on the
+        camera view.
+
+        Args:
+            event: The wxPython file picker event.
+        """
+        path = event.GetPath()
+        if not os.path.isfile(path):
+            return
+        try:
+            with open(path, "r") as f:
+                reader = csv.reader(f)
+                header = next(reader)
+                # Number of beams = (columns - 1) / 2  (Time, x0, y0, x1, y1, ...)
+                num_beams = (len(header) - 1) // 2
+                if num_beams <= 0:
+                    return
+
+                tracks = [[] for _ in range(num_beams)]
+                initial = None
+
+                for row in reader:
+                    if len(row) < 1 + num_beams * 2:
+                        continue
+                    points = []
+                    skip_row = False
+                    for i in range(num_beams):
+                        x_str = row[1 + i * 2].strip()
+                        y_str = row[2 + i * 2].strip()
+                        if x_str == "" or y_str == "":
+                            skip_row = True
+                            break
+                        try:
+                            points.append((int(float(x_str)), int(float(y_str))))
+                        except ValueError:
+                            skip_row = True
+                            break
+                    if skip_row:
+                        continue
+                    if initial is None:
+                        initial = list(points)
+                    for idx, pt in enumerate(points):
+                        tracks[idx].append(pt)
+
+                if initial is not None:
+                    self.track_overlay_data = {
+                        "initial": initial,
+                        "tracks": tracks,
+                    }
+                    self.panel_cam_img.track_overlay = self.track_overlay_data
+                    logger.info("Loaded track overlay: %d beams, %d points",
+                                num_beams, len(tracks[0]) if tracks else 0)
+        except Exception as e:
+            logger.error("Failed to load track file %s: %s", path, e)
+            wx.MessageBox(
+                f"Failed to load track file:\n{e}",
+                "Error",
+                wx.OK | wx.ICON_ERROR,
+            )
 
     def on_screenshot(self, event):
         """

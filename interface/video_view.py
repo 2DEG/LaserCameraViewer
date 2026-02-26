@@ -2,6 +2,7 @@ import wx
 import cv2
 import os
 import logging
+import numpy as np
 
 from PIL import Image
 from datetime import datetime
@@ -119,6 +120,7 @@ class VideoView(ImageView):
         self.make_screen_shot = False
         self.rec_path = os.path.dirname(os.path.realpath(__file__))
         self.ellipses_centers = []
+        self.track_overlay = None
 
         # Bind mouse events
         self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
@@ -221,6 +223,9 @@ class VideoView(ImageView):
             if self.make_screen_shot:
                 self.save_screenshot(frame)
 
+            if self.track_overlay is not None:
+                frame = self.draw_tracks(frame)
+
             if self.zoom_pipeline != []:
                 # if self.rect_start is not None and self.rect_end is not None:
                 for each in self.zoom_pipeline:
@@ -237,6 +242,34 @@ class VideoView(ImageView):
                 frame = self.draw_rectangle(frame)
 
             wx.CallAfter(self.set_frame, frame)
+
+    def draw_tracks(self, frame):
+        """
+        Draws track overlay on the frame.
+        Initial positions are shown as red filled circles; track paths as orange
+        polylines.
+
+        Args:
+            frame: The current video frame (BGR/RGB numpy array).
+
+        Returns:
+            The frame with tracks drawn on it.
+        """
+        overlay = self.track_overlay
+        if overlay is None:
+            return frame
+
+        # Draw orange polylines for each beam track
+        for beam_track in overlay.get("tracks", []):
+            if len(beam_track) >= 2:
+                pts = np.array(beam_track, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(frame, [pts], isClosed=False, color=(255, 165, 0), thickness=2)
+
+        # Draw red filled circles at initial positions
+        for pos in overlay.get("initial", []):
+            cv2.circle(frame, (int(pos[0]), int(pos[1])), 5, (255, 0, 0), -1)
+
+        return frame
 
     def start(self):
         """

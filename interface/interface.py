@@ -279,6 +279,18 @@ class Main_Frame ( wx.Frame ):
 		self.m_dirPicker21 = wx.DirPickerCtrl( self.n_stab_track, wx.ID_ANY, wx.EmptyString, u"Select a folder", wx.DefaultPosition, wx.DefaultSize, wx.DIRP_DEFAULT_STYLE )
 		bSizer9.Add( self.m_dirPicker21, 0, wx.ALL|wx.EXPAND, 5 )
 
+		self.show_tracks_chk = wx.CheckBox( self.n_stab_track, wx.ID_ANY, u"Show tracks", wx.DefaultPosition, wx.DefaultSize, 0 )
+		bSizer9.Add( self.show_tracks_chk, 0, wx.ALL, 5 )
+
+		self.m_staticText_open_track = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Open tracks file:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText_open_track.Wrap( -1 )
+		self.m_staticText_open_track.Enable( False )
+		bSizer9.Add( self.m_staticText_open_track, 0, wx.ALL, 5 )
+
+		self.m_filePicker_track = wx.FilePickerCtrl( self.n_stab_track, wx.ID_ANY, wx.EmptyString, u"Select a track CSV file", u"CSV files (*.csv)|*.csv", wx.DefaultPosition, wx.DefaultSize, wx.FLP_DEFAULT_STYLE|wx.FLP_FILE_MUST_EXIST )
+		self.m_filePicker_track.Enable( False )
+		bSizer9.Add( self.m_filePicker_track, 0, wx.ALL|wx.EXPAND, 5 )
+
 
 		fgSizer3.Add( bSizer9, 1, wx.EXPAND, 5 )
 
@@ -397,6 +409,8 @@ class Main_Frame ( wx.Frame ):
 		self.min_area.Bind( wx.EVT_SPINCTRL, self.on_detection_params )
 		self.det_threshold.Bind( wx.EVT_SPINCTRL, self.on_detection_params )
 		self.m_dirPicker21.Bind( wx.EVT_DIRPICKER_CHANGED, self.on_track_saving_dir )
+		self.show_tracks_chk.Bind( wx.EVT_CHECKBOX, self.on_show_tracks_chk )
+		self.m_filePicker_track.Bind( wx.EVT_FILEPICKER_CHANGED, self.on_track_file_picked )
 		self.m_checkBox2.Bind( wx.EVT_CHECKBOX, self.on_show_hide )
 		self.m_dirPicker2.Bind( wx.EVT_DIRPICKER_CHANGED, self.on_rec_dir )
 		self.video_rate.Bind( wx.EVT_SPINCTRL, self.on_video_rate )
@@ -474,6 +488,12 @@ class Main_Frame ( wx.Frame ):
 		event.Skip()
 
 	def on_track_saving_dir( self, event ):
+		event.Skip()
+
+	def on_show_tracks_chk( self, event ):
+		event.Skip()
+
+	def on_track_file_picked( self, event ):
 		event.Skip()
 
 	def on_show_hide( self, event ):
