@@ -1,15 +1,15 @@
 import wx
 import cv2
 import os
-import csv
+import logging
+import numpy as np
 
 from PIL import Image
 from datetime import datetime
 
-
-from vmbpy import *
-
 import threading
+
+logger = logging.getLogger(__name__)
 import queue
 
 from interface.image_view import ImageView
@@ -21,14 +21,22 @@ from events.events import (
 )
 
 class Frame_Processor(threading.Thread):
-    def __init__(self, frame_queue, event_catcher=None):
-            threading.Thread.__init__(self)
+    def __init__(self, frame_queue, command_queue, event_catcher=None,
+                 cross_line_len=100, detect_ellipses=True,
+                 max_spots=10, min_area=50, threshold=50):
+            threading.Thread.__init__(self, daemon=True)
             self.killswitch = threading.Event()
+            self.cross_line_len = cross_line_len
+            self.detect_ellipses = detect_ellipses
+            self.max_spots = max_spots
+            self.min_area = min_area
+            self.threshold = threshold
             self.event_catcher = event_catcher
+            self.command_queue = command_queue
             self.frame_queue = frame_queue
     
     def stop(self):
-            if self.isAlive():
+            if self.is_alive():
                 self.killswitch.set()
                 self.join()
 
@@ -37,17 +45,53 @@ class Frame_Processor(threading.Thread):
             try:
                 frame = self.frame_queue.get(timeout=0.1)
             except queue.Empty:
+                frame = None
                 continue
             else:
                 if frame is not None:
-                    # print("Frame max:", frame.max())
-                    wx.PostEvent(self.event_catcher, UpdateIntensity(frame.max()))
-                    frame, ellipse_centers = detect_ellipses(frame)
-                    if len(ellipse_centers) != 0:
-                        wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
+                    if self.detect_ellipses:
+                        frame, ellipse_centers = detect_ellipses(
+                            frame,
+                            length=self.cross_line_len,
+                            max_spots=self.max_spots,
+                            min_area=self.min_area,
+                            threshold=self.threshold,
+                        )
+                        if len(ellipse_centers) != 0:
+                            wx.PostEvent(self.event_catcher, OnBeamCenters(ellipse_centers))
                 
-                    wx.PostEvent(self.event_catcher, CAMImage(frame, ellipse_centers))
-        print("Frame processing ended")
+                        wx.PostEvent(self.event_catcher, CAMImage(frame, ellipse_centers))
+                    else:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+                        wx.PostEvent(self.event_catcher, CAMImage(frame, None))
+                    frame = None
+            try:
+                command = self.command_queue.get_nowait()
+            except queue.Empty:
+                command = None
+                continue
+            else:
+                if command is not None:
+                    for each in command.keys():
+                        if each == "cross_line_len":
+                            self.cross_line_len = command[each]
+                            break
+                        elif each == "detect_ellipses":
+                            self.detect_ellipses = command[each]
+                            break
+                        elif each == "max_spots":
+                            self.max_spots = command[each]
+                            break
+                        elif each == "min_area":
+                            self.min_area = command[each]
+                            break
+                        elif each == "threshold":
+                            self.threshold = command[each]
+                            break
+                        else:
+                            pass 
+                command = None
+        logger.info("Frame processing ended")
 
 class VideoView(ImageView):
     """
@@ -75,7 +119,8 @@ class VideoView(ImageView):
 
         self.make_screen_shot = False
         self.rec_path = os.path.dirname(os.path.realpath(__file__))
-        
+        self.ellipses_centers = []
+        self.track_overlay = None
 
         # Bind mouse events
         self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
@@ -92,11 +137,12 @@ class VideoView(ImageView):
         """
 
         self.CaptureMouse()
-        self.rect_start = recalculate_coord(
+        x, y = recalculate_coord(
             coord=event.GetPosition(),
             best_size=self.best_size,
             img_size=self.image_size,
         )
+        self.rect_start = [x, y]
 
     def on_mouse_move(self, event):
         """
@@ -114,9 +160,11 @@ class VideoView(ImageView):
         )
         if event.Dragging() and event.LeftIsDown():
             self.draw_rect = True
+            # self.rect_end = [x if x > 0 else 0, y if y > 0 else 0]
             self.rect_end = [x, y]
             #
-        wx.PostEvent(self, MouseXY(x, y))
+        xx, yy = zoom_in_coord(coord=event.GetPosition(), best_size=self.best_size, img_size=self.image_size, zoom_pipeline=self.zoom_pipeline)
+        wx.PostEvent(self, MouseXY(xx, yy))
 
     def on_release(self, event):
         """
@@ -175,6 +223,9 @@ class VideoView(ImageView):
             if self.make_screen_shot:
                 self.save_screenshot(frame)
 
+            if self.track_overlay is not None:
+                frame = self.draw_tracks(frame)
+
             if self.zoom_pipeline != []:
                 # if self.rect_start is not None and self.rect_end is not None:
                 for each in self.zoom_pipeline:
@@ -184,11 +235,41 @@ class VideoView(ImageView):
                         min(each[0][0], each[1][0]) : max(each[0][0], each[1][0]),
                     ]
 
+            wx.PostEvent(self, UpdateIntensity(frame.max()))       
+
             if self.draw_rect:
                 # print("HI!")
                 frame = self.draw_rectangle(frame)
 
             wx.CallAfter(self.set_frame, frame)
+
+    def draw_tracks(self, frame):
+        """
+        Draws track overlay on the frame.
+        Initial positions are shown as red filled circles; track paths as orange
+        polylines.
+
+        Args:
+            frame: The current video frame (BGR/RGB numpy array).
+
+        Returns:
+            The frame with tracks drawn on it.
+        """
+        overlay = self.track_overlay
+        if overlay is None:
+            return frame
+
+        # Draw orange polylines for each beam track
+        for beam_track in overlay.get("tracks", []):
+            if len(beam_track) >= 2:
+                pts = np.array(beam_track, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(frame, [pts], isClosed=False, color=(255, 165, 0), thickness=2)
+
+        # Draw red filled circles at initial positions
+        for pos in overlay.get("initial", []):
+            cv2.circle(frame, (int(pos[0]), int(pos[1])), 5, (255, 0, 0), -1)
+
+        return frame
 
     def start(self):
         """
@@ -211,16 +292,20 @@ class VideoView(ImageView):
 
         Args:
             frame: A frame on which a rectangle will be drawn.
+
+        Returns:
+            The frame with the rectangle drawn, or the original frame unchanged.
         """
 
         if self.rect_start is not None and self.rect_end is not None:
-            return cv2.rectangle(
+            cv2.rectangle(
                 frame,
                 self.rect_start,
                 self.rect_end,
                 (255, 0, 0),
                 thickness=2,
             )
+        return frame
 
     def save_screenshot(self, frame):
         """
@@ -249,24 +334,61 @@ def recalculate_coord(coord, best_size, img_size):
     (circ_x, circ_y) = coord
     (i_w, i_h, x_of, y_of) = best_size
     (real_x, real_y) = img_size
+    if i_w == 0 or i_h == 0:
+        return 0, 0
     if x_of == 0:
         circ_y = circ_y - y_of
     if y_of == 0:
         circ_x = circ_x - x_of
-    return int(circ_x * real_x / i_w), int(circ_y * real_y / i_h)
+    x = int(circ_x * real_x / i_w)
+    y = int(circ_y * real_y / i_h)
+    return x if x > 0 else 0, y if y > 0 else 0
+
+def zoom_in_coord(coord, best_size, img_size, zoom_pipeline):
+    """
+    Recalculates coordinates, taken from GUI panel into true coordinates of the frame.
+
+    Args:
+        coord: Original coordinates to be recalculated.
+        best_size: Best size parameters.
+        img_size: Image size parameters.
+        zoom_pipeline: Pipeline of zooms.
+    """
+        
+    (circ_x, circ_y) = coord
+    (i_w, i_h, x_of, y_of) = best_size
+    (real_x, real_y) = img_size
+    if i_w == 0 or i_h == 0:
+        return 0, 0
+    if x_of == 0:
+        circ_y = circ_y - y_of
+    if y_of == 0:
+        circ_x = circ_x - x_of
+    x = int(circ_x * real_x / i_w)
+    y = int(circ_y * real_y / i_h)
+    
+    if zoom_pipeline != []:
+        for each in zoom_pipeline:
+            x = x + each[0][0]
+            y = y + each[0][1] 
+
+    return x, y
 
 
-def detect_ellipses(gray, length=100):
+def detect_ellipses(gray, length=100, max_spots=10, min_area=50, threshold=50):
     """
     Detects ellipses in an image.
 
     Args:
-        img: Image to be processed.
-        length: Length parameter for ellipse detection. Defaults to 100.
+        gray: Grayscale image to be processed.
+        length: Length of cross-hair lines drawn at ellipse centers. Defaults to 100.
+        max_spots: Maximum number of spots to detect. Defaults to 10.
+        min_area: Minimum contour area in pixels to consider. Defaults to 50.
+        threshold: Binary threshold value (0-255). Defaults to 50.
     """
 
     img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
-    thresh = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)[1]
+    thresh = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)[1]
 
     # Dilate with elliptical shaped kernel
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -274,19 +396,17 @@ def detect_ellipses(gray, length=100):
 
     # Find contours, filter using contour threshold area, draw ellipse
     cnts = cv2.findContours(dilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # print(cnts)
     cnts = cnts[0] if len(cnts) == 2 else cnts[1]
 
     centers = []
-    # k = 0
     for c in cnts:
-        # if k > 5:
-            # break
+        if len(centers) >= max_spots:
+            break
         area = cv2.contourArea(c)
-        if area > 50:
+        if area > min_area:
             try:
                 ellipse = cv2.fitEllipse(c)
-            except:
+            except Exception:
                 continue
             a, b = ellipse[0]
             a = int(a)
@@ -296,6 +416,5 @@ def detect_ellipses(gray, length=100):
             cv2.line(img, (a - delta, b), (a + delta, b), (255, 0, 0), 1)
             cv2.line(img, (a, b - delta), (a, b + delta), (255, 0, 0), 1)
             cv2.ellipse(img, ellipse, (0, 255, 0), 2)
-        # k += 1
 
     return img, centers

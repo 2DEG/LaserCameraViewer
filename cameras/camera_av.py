@@ -1,9 +1,53 @@
+import os
+import sys
+import logging
 import threading
 import queue
 import wx
 from events.events import CAMImage, CAMParam, CAMInit
 from cameras.camera_abc import *
+
+logger = logging.getLogger(__name__)
+
+# Workaround: VmbPy's RuntimeTypeCheckEnable decorator calls
+# typing.get_type_hints() which fails on Python 3.13+ due to stricter
+# forward reference evaluation. Patch get_type_hints in the module so
+# already-decorated functions use the safe version at call time.
+if sys.version_info >= (3, 13):
+    import vmbpy.util.runtime_type_check as _rtc
+    _orig_get_type_hints = _rtc.get_type_hints
+
+    def _safe_get_type_hints(func):
+        try:
+            return _orig_get_type_hints(func)
+        except NameError:
+            return {}
+
+    _rtc.get_type_hints = _safe_get_type_hints
+
 from vmbpy import *
+
+# Known fallback paths for VimbaX CTI (transport layer) files
+_VIMBAX_CTI_FALLBACKS = [
+    r'C:\Program Files\Allied Vision\Vimba X\cti',
+    r'C:\Program Files\Allied Vision\Vimba X\bin\cti',
+]
+
+
+def _get_vmb_instance():
+    """Get VmbSystem instance with CTI path configuration.
+
+    Uses the standard GENICAM_GENTL64_PATH environment variable if set.
+    Otherwise falls back to known VimbaX installation paths.
+    """
+    vmb = VmbSystem.get_instance()
+    if 'GENICAM_GENTL64_PATH' not in os.environ:
+        for path in _VIMBAX_CTI_FALLBACKS:
+            if os.path.isdir(path):
+                vmb.set_path_configuration(path)
+                break
+    return vmb
+
 
 # All frames will either be recorded in this format, or transformed to it before being displayed
 opencv_display_format = PixelFormat.Mono8
@@ -18,22 +62,15 @@ FRAME_WIDTH = 2064
 def print_all_features(module: FeatureContainer):
     for feat in module.get_all_features():
         print_feature(feat)
-        # if feat.get_visibility() <= max_visibility_level:
 
 
 def print_feature(feature: FeatureTypes):
     try:
         value = feature.get()
-
     except (AttributeError, VmbFeatureError):
         value = None
 
-    print("/// Feature name   : {}".format(feature.get_name()))
-    print("/// Display name   : {}".format(feature.get_display_name()))
-    print("/// Tooltip        : {}".format(feature.get_tooltip()))
-    print("/// Description    : {}".format(feature.get_description()))
-    print("/// SFNC Namespace : {}".format(feature.get_sfnc_namespace()))
-    print("/// Value          : {}\n".format(str(value)))
+    logger.debug("Feature: %s = %s", feature.get_name(), value)
 
 
 def get_value(cam: Camera, feat_name: str):
@@ -43,11 +80,8 @@ def get_value(cam: Camera, feat_name: str):
     try:
         val = feat.get()
     except VmbFeatureError:
-        print(
-            "Camera {}: Failed to get value of Feature '{}'".format(
-                cam.get_id(), feat_name
-            )
-        )
+        logger.warning("Camera %s: Failed to get value of Feature '%s'",
+                       cam.get_id(), feat_name)
 
     if val:
         return val
@@ -65,9 +99,8 @@ def set_nearest_value(cam: Camera, feat_name: str, feat_value: int):
         feat.set(feat_value)
 
     except VmbFeatureError:
-        print("Except in dimension setting")
         min_, max_ = feat.get_range()
-        print("Dim range: ", min_, max_)
+        logger.debug("Feature '%s' range: %s - %s", feat_name, min_, max_)
         inc = feat.get_increment()
 
         if feat_value <= min_:
@@ -93,41 +126,46 @@ class Camera_AV(Camera_ABC, threading.Thread):
     """Class for Allied Vision cameras"""
 
     def __init__(self, *args, event_catcher=None, frame_queue=None, **kw):
-        print("Here!")
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, daemon=True)
         self.command_queue = queue.Queue()
         self.producer = None
         self.event_catcher = event_catcher
         self.frame_queue = frame_queue
 
         try:
-            with VmbSystem.get_instance() as vmb:
+            with _get_vmb_instance() as vmb:
                 for cam in vmb.get_all_cameras():
-                    print("Cam ID:", cam.get_id())
-                    with cam:
-                        param_list = {
-                            "gain": cam.Gain.get(),
-                            "gain_range": cam.Gain.get_range(),
-                            "gain_increment": cam.Gain.get_increment(),
-                            "exposure": cam.ExposureTime.get(),
-                            "exposure_range": cam.ExposureTime.get_range(),
-                            "exposure_increment": cam.ExposureTime.get_increment(),
-                            "height_range": cam.Height.get_range(),
-                            "width_range": cam.Width.get_range(),
-                        }
-                        _, FRAME_HEIGHT = param_list["height_range"]
-                        _, FRAME_WIDTH = param_list["width_range"]
-                        print("Height, Width: ", FRAME_HEIGHT, FRAME_WIDTH)
-                        wx.PostEvent(self.event_catcher, CAMInit(param_list))
-        except VmbCameraError:
+                    logger.info("Found camera: %s", cam.get_id())
+                    try:
+                        with cam:
+                            param_list = {
+                                "gain": cam.Gain.get(),
+                                "gain_range": cam.Gain.get_range(),
+                                "gain_increment": cam.Gain.get_increment(),
+                                "exposure": cam.ExposureTime.get(),
+                                "exposure_range": cam.ExposureTime.get_range(),
+                                "exposure_increment": cam.ExposureTime.get_increment(),
+                                "height_range": cam.Height.get_range(),
+                                "width_range": cam.Width.get_range(),
+                            }
+                            _, FRAME_HEIGHT = param_list["height_range"]
+                            _, FRAME_WIDTH = param_list["width_range"]
+                            logger.info("Camera %s: resolution %dx%d", cam.get_id(), FRAME_WIDTH, FRAME_HEIGHT)
+                            wx.PostEvent(self.event_catcher, CAMInit(param_list))
+                    except (AttributeError, VmbFeatureError) as e:
+                        logger.info("Skipping camera %s: %s", cam.get_id(), e)
+                        continue
+        except (VmbCameraError, VmbTransportLayerError):
             pass
 
     def enum_cameras(self):
         cam_list = []
-        print("Here!")
-        with VmbSystem.get_instance() as vmb:
-            for cam in vmb.get_all_cameras():
-                cam_list.append(cam.get_id())
+        try:
+            with _get_vmb_instance() as vmb:
+                for cam in vmb.get_all_cameras():
+                    cam_list.append(cam.get_id())
+        except (VmbCameraError, VmbTransportLayerError):
+            pass
         
         if cam_list == []:
             return None, []
@@ -136,7 +174,7 @@ class Camera_AV(Camera_ABC, threading.Thread):
 
     class Producer(threading.Thread):
         def __init__(self, command_queue, event_catcher=None, frame_queue=None):
-            threading.Thread.__init__(self)
+            threading.Thread.__init__(self, daemon=True)
             self.killswitch = threading.Event()
             self.event_catcher = event_catcher
             self.command_queue = command_queue
@@ -151,56 +189,68 @@ class Camera_AV(Camera_ABC, threading.Thread):
                 img = frame.convert_pixel_format(
                     opencv_display_format
                 ).as_opencv_image()
-                self.frame_queue.put(img)
-                # wx.PostEvent(self.event_catcher, CAMImage(img))
+                try:
+                    self.frame_queue.put_nowait(img)
+                except queue.Full:
+                    # Drop the oldest frame and enqueue the new one
+                    try:
+                        self.frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self.frame_queue.put_nowait(img)
             cam.queue_frame(frame)
 
         def stop(self):
-            if self.isAlive():
+            if self.is_alive():
                 self.killswitch.set()
                 self.join()
 
         def run(self):
             try:
-                with VmbSystem.get_instance() as vmb:
+                with _get_vmb_instance() as vmb:
                     for cam in vmb.get_all_cameras():
-                        print(cam.get_id() == "DEV_1AB22C01054E")
-                        with cam:
-                            set_nearest_value(cam, "Height", FRAME_HEIGHT)
-                            set_nearest_value(cam, "Width", FRAME_WIDTH)
+                        # Skip cameras that lack required features (e.g. virtual cameras)
+                        try:
+                            with cam:
+                                set_nearest_value(cam, "Height", FRAME_HEIGHT)
+                                set_nearest_value(cam, "Width", FRAME_WIDTH)
 
-                            try:
-                                cam.start_streaming(self)
-                                print("Streaming started")
-                                while not self.killswitch.is_set():
-                                    try:
-                                        command, value = self.command_queue.get(
-                                            timeout=0.1
-                                        )  # One may use get_nowait() instead, but it is too fast, so one should handle queue.Empty
-                                    except queue.Empty:
-                                        continue
-                                    else:
-                                        if value is not None:
-                                            set_nearest_value(cam, command, value)
+                                try:
+                                    cam.start_streaming(self)
+                                    logger.info("Streaming started on %s", cam.get_id())
+                                    while not self.killswitch.is_set():
+                                        try:
+                                            command, value = self.command_queue.get(
+                                                timeout=0.1
+                                            )
+                                        except queue.Empty:
+                                            continue
                                         else:
-                                            val = get_value(cam, command)
-                                            if val:
-                                                wx.PostEvent(
-                                                    self.event_catcher,
-                                                    CAMParam(command, val),
-                                                )
+                                            if value is not None:
+                                                set_nearest_value(cam, command, value)
+                                            else:
+                                                val = get_value(cam, command)
+                                                if val:
+                                                    wx.PostEvent(
+                                                        self.event_catcher,
+                                                        CAMParam(command, val),
+                                                    )
 
-                            finally:
-                                cam.stop_streaming()
-                                print("Streaming stopped")
+                                finally:
+                                    cam.stop_streaming()
+                                    logger.info("Streaming stopped")
 
-                            print("Streaming ended")
-            except VmbCameraError:
+                                # Only stream from the first working camera
+                                return
+                        except (AttributeError, VmbFeatureError) as e:
+                            logger.info("Skipping camera %s: %s", cam.get_id(), e)
+                            continue
+            except (VmbCameraError, VmbTransportLayerError):
                 pass
 
     def stop(self):
         self.producer.stop()
-        if self.isAlive():
+        if self.is_alive():
             self.join()
 
     def join(self, timeout=None):

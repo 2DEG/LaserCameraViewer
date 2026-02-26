@@ -44,10 +44,10 @@ class CAMInit(wx.PyEvent):
 
 
 class CAMImage(wx.PyEvent):
-    def __init__(self, img, beam_centers=[]):
+    def __init__(self, img, beam_centers=None):
         wx.PyEvent.__init__(self)
         self.img = img
-        self.beam_centers = beam_centers
+        self.beam_centers = beam_centers if beam_centers is not None else []
         self.SetEventType(EVT_CAM_IMG)
 
 
