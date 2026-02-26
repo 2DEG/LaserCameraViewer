@@ -1,6 +1,7 @@
 import wx
 import cv2
 import os
+import math
 import queue
 import logging
 import numpy as np
@@ -156,13 +157,18 @@ class Frame_Handlers(Main_Frame):
         self.tracking_time = int(self.time_bin.GetValue() * 1000)
         self.Bind(wx.EVT_TIMER, self.on_rec_timer)
 
+        # Log-scale exposure slider parameters (will be updated by on_camera_setup_update)
+        self._exp_min = 1.0
+        self._exp_max = 1e6
+        self._exp_slider_steps = 1000  # internal slider range 0..1000
+
         # Initial setup for exposure time and gain sliders, text boxes and status bar
         self.statusbar.SetStatusText("Cursor coord.: ({:d}, {:d})".format(0, 0), 0)
         self.statusbar.SetStatusText("Real fps: {:d}".format(0), 1)
         exp_time = 1000
         self.statusbar.SetStatusText("Real exp.: {:.2f}".format(exp_time), 2)
         self.exp_text.SetValue(str(exp_time))
-        self.exp_slider.SetValue(exp_time)
+        self.exp_slider.SetValue(self._exp_to_slider(exp_time))
 
         gain = 1
         self.statusbar.SetStatusText("Real gain: {:.2f}".format(gain), 3)
@@ -192,6 +198,29 @@ class Frame_Handlers(Main_Frame):
         self.tracking_arr = []
         self.tracking_fixed_arr = []
         self.tracking_file = None
+
+    def on_help_tracking(self, event):
+        """Shows step-by-step instructions for using the tracking tool."""
+        msg = (
+            "How to use the Beam Tracking tool:\n"
+            "\n"
+            "1. Start acquisition by pressing the Play button.\n"
+            "2. Go to the 'Stability Tracking' tab.\n"
+            "3. Adjust detection parameters (Max spots, Min area, Threshold)\n"
+            "   until the beams you want to track are detected.\n"
+            "4. Check 'Show/Hide Ellipses' to see the detected spots.\n"
+            "5. Set the time period (bin size) for how often positions\n"
+            "   are recorded.\n"
+            "6. Choose a directory in 'Save TRACK to'.\n"
+            "7. Click 'Apply' to fix the current beam positions as\n"
+            "   the reference. A CSV file will be created.\n"
+            "8. Press the Track button in the toolbar to start/stop\n"
+            "   recording beam positions over time.\n"
+            "\n"
+            "The CSV file will contain timestamps and (x, y) coordinates\n"
+            "for each tracked beam."
+        )
+        wx.MessageBox(msg, "Tracking Guide", wx.OK | wx.ICON_INFORMATION)
 
     def _on_cam_image(self, event):
         """Wrapper for camera image events. Dismisses the start-up progress
@@ -526,15 +555,29 @@ class Frame_Handlers(Main_Frame):
         else:
             self.track_timer.Stop()
 
+    def _exp_to_slider(self, exposure):
+        """Convert an exposure value to a log-scale slider position (0..N)."""
+        if exposure <= self._exp_min:
+            return 0
+        if exposure >= self._exp_max:
+            return self._exp_slider_steps
+        return int(self._exp_slider_steps
+                   * math.log(exposure / self._exp_min)
+                   / math.log(self._exp_max / self._exp_min))
+
+    def _slider_to_exp(self, pos):
+        """Convert a log-scale slider position (0..N) to an exposure value."""
+        return self._exp_min * (self._exp_max / self._exp_min) ** (pos / self._exp_slider_steps)
+
     def on_exp_slider(self, event):
         """
-        Updates the camera's exposure time from the slider.
+        Updates the camera's exposure time from the slider (log scale).
 
         Args:
             event: The wxPython slider event.
         """
 
-        new_exp_time = self.exp_slider.GetValue()
+        new_exp_time = self._slider_to_exp(self.exp_slider.GetValue())
         self.exp_text.SetValue(float(new_exp_time))
         if self.camera:
             if self.backend == "Camera_ADF":
@@ -555,7 +598,7 @@ class Frame_Handlers(Main_Frame):
 
     def _apply_exposure(self):
         new_exp_time = float(self.exp_text.GetValue())
-        self.exp_slider.SetValue(int(new_exp_time))
+        self.exp_slider.SetValue(self._exp_to_slider(new_exp_time))
         if self.camera:
             if self.backend == "Camera_ADF":
                 self.camera.set_exposure(int(new_exp_time))
@@ -608,7 +651,7 @@ class Frame_Handlers(Main_Frame):
             self.statusbar.SetStatusText("Real gain: {:.2f}".format(value), 3)
         elif param == "ExposureTime":
             self.exp_text.SetValue(float(value))
-            self.exp_slider.SetValue(int(value))
+            self.exp_slider.SetValue(self._exp_to_slider(value))
             self.statusbar.SetStatusText("Real exp.: {:.2f}".format(value), 2)
 
     def on_camera_setup_update(self, event):
@@ -619,8 +662,10 @@ class Frame_Handlers(Main_Frame):
             event: The wxPython event containing camera setup data.
         """
 
-        self.exp_slider.SetRange(*(map(int, event.prop["exposure_range"])))
-        self.exp_slider.SetValue(int(event.prop["exposure"]))
+        self._exp_min = max(1.0, float(event.prop["exposure_range"][0]))
+        self._exp_max = float(event.prop["exposure_range"][1])
+        self.exp_slider.SetRange(0, self._exp_slider_steps)
+        self.exp_slider.SetValue(self._exp_to_slider(event.prop["exposure"]))
         self.exp_text.SetRange(*(map(int, event.prop["exposure_range"])))
         self.exp_text.SetIncrement(float(event.prop["exposure_increment"]))
         self.exp_text.SetValue(float(event.prop["exposure"]))

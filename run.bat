@@ -15,16 +15,21 @@ cd /d "%SCRIPT_DIR%"
 set "VENV_DIR=%SCRIPT_DIR%.venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
+set "SETUP_MARKER=%VENV_DIR%\.setup_done"
 set "VMBPY_WHL="
 set "MIN_MAJOR=3"
 set "MIN_MINOR=10"
 
 :: ----------------------------------------------------------
-:: 1. If .venv already exists and has python, just run
+:: 1. If .venv exists, has python, AND packages are installed, just run
 :: ----------------------------------------------------------
 if exist "%VENV_PYTHON%" (
-    echo [OK] Virtual environment found.
-    goto :run
+    if exist "%SETUP_MARKER%" (
+        echo [OK] Virtual environment found.
+        goto :run
+    )
+    echo [INFO] Virtual environment found but packages not installed.
+    goto :install_packages
 )
 
 echo [INFO] No virtual environment found. Setting one up...
@@ -142,6 +147,7 @@ echo [OK] Virtual environment created.
 :: ----------------------------------------------------------
 :: 5. Install dependencies from requirements.txt
 :: ----------------------------------------------------------
+:install_packages
 echo [INFO] Upgrading pip...
 "%VENV_PYTHON%" -m pip install --upgrade pip >nul 2>&1
 
@@ -179,6 +185,9 @@ if defined VMBPY_WHL (
     echo        To add support later, install VimbaX SDK and run:
     echo        .venv\Scripts\pip install "C:\Program Files\Allied Vision\Vimba X\api\python\vmbpy-*.whl"
 )
+
+:: Mark setup as complete so we skip it next time
+echo.> "%SETUP_MARKER%"
 
 echo.
 echo ============================================================

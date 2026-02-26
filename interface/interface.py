@@ -48,6 +48,7 @@ class Main_Frame ( wx.Frame ):
 		self.m_menubar1.Append( self.file_menu, u"File" )
 
 		self.help_menu = wx.Menu()
+		self.m_help_tracking = self.help_menu.Append( wx.ID_ANY, u"Tracking Guide", u"How to use the beam tracking tool" )
 		self.m_menubar1.Append( self.help_menu, u"Help" )
 
 		self.SetMenuBar( self.m_menubar1 )
@@ -98,7 +99,7 @@ class Main_Frame ( wx.Frame ):
 
 		bSizer14 = wx.BoxSizer( wx.HORIZONTAL )
 
-		self.exp_slider = wx.Slider( self.n_settings, wx.ID_ANY, 500000, 1, 1000000, wx.DefaultPosition, wx.DefaultSize, wx.SL_HORIZONTAL|wx.SL_MIN_MAX_LABELS|wx.SL_VALUE_LABEL )
+		self.exp_slider = wx.Slider( self.n_settings, wx.ID_ANY, 500, 0, 1000, wx.DefaultPosition, wx.DefaultSize, wx.SL_HORIZONTAL )
 
 		bSizer14.Add( self.exp_slider, 1, wx.ALL|wx.ALIGN_BOTTOM, 5 )
 
@@ -270,7 +271,7 @@ class Main_Frame ( wx.Frame ):
 
 		bSizer9.Add( bSizer_thresh, 1, wx.EXPAND, 5 )
 
-		self.m_staticText7 = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Save track to:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText7 = wx.StaticText( self.n_stab_track, wx.ID_ANY, u"Save TRACK to:", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_staticText7.Wrap( -1 )
 
 		bSizer9.Add( self.m_staticText7, 0, wx.ALL, 5 )
@@ -308,7 +309,7 @@ class Main_Frame ( wx.Frame ):
 
 		bSizer12 = wx.BoxSizer( wx.VERTICAL )
 
-		self.m_texttext = wx.StaticText( self.n_rec, wx.ID_ANY, u"Save records to:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_texttext = wx.StaticText( self.n_rec, wx.ID_ANY, u"Save IMAGES to:", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_texttext.Wrap( -1 )
 
 		bSizer12.Add( self.m_texttext, 0, wx.ALL, 5 )
@@ -366,6 +367,7 @@ class Main_Frame ( wx.Frame ):
 		self.Centre( wx.BOTH )
 
 		# Connect Events
+		self.Bind( wx.EVT_MENU, self.on_help_tracking, id = self.m_help_tracking.GetId() )
 		self.Bind( wx.EVT_CLOSE, self.on_close )
 		self.Bind( wx.EVT_TOOL, self.on_acq_start, id = self.t_start.GetId() )
 		self.Bind( wx.EVT_TOOL, self.on_acq_stop, id = self.t_stop.GetId() )
@@ -404,6 +406,9 @@ class Main_Frame ( wx.Frame ):
 
 
 	# Virtual event handlers, override them in your derived class
+	def on_help_tracking( self, event ):
+		event.Skip()
+
 	def on_close( self, event ):
 		event.Skip()
 
